@@ -103,18 +103,18 @@ same codebase with isolated data directories.
    - CPU: `pip install -r requirements.txt`
    - GPU (CUDA, e.g. GTX 1650 Ti): `pip install -r requirements.txt --index-url https://download.pytorch.org/whl/cu126`
 2. Copy `.env.example` to `.env` and fill in real values (see below).
-3. **Important:** your existing `.env` already has `DISCORD_TOKEN` and
-   an old `OPENAI_API_KEY`. Add these new lines to it:
    ```
    AI_BACKEND=groq
-   GROQ_API_KEY=...
-   OWNER_IDS=your-discord-user-id
+   DISCORD_TOKEN=<your bot token>
+   GROQ_API_KEY=<from https://console.groq.com/keys>
+   OWNER_IDS=<your discord user id>
    ```
    Get `GROQ_API_KEY` from https://console.groq.com/keys (free account,
-   no credit card required for the free tier as of writing). The old
-   `OPENAI_API_KEY` line is no longer used and can be removed.
-4. **Rotate your Discord bot token and old OpenAI key** if you haven't
-   already -- both were exposed in plaintext during this rebuild.
+   no credit card required for the free tier as of writing).
+3. **Rotate the Discord bot token before using it.** A bot token *is* the bot's
+   account -- `Discord Developer Portal -> your application -> Bot -> Reset Token`
+   invalidates the previous one immediately. See "Security Note" at the end of this
+   file.
 5. First Reddit data pull (the shipped `data/reddit/*_posts.json` files
    already work out of the box, but to refresh them):
    ```
@@ -253,11 +253,10 @@ only a short per-user identity/relationship note is sent (see
 `examples.json` files are still useful as a reference if you want to
 mirror that content into the Shapes dashboard's own personality config.
 
-**The father-roleplay behavior for your Discord ID is NOT something
-Shapes' dashboard can know on its own** -- it's implemented by this
-bot injecting a short context note (from `social/data/identities.json`)
-into every request from that specific Discord ID, on top of whatever
-personality Shapes has configured. If Alice doesn't seem to pick up on
+**Per-user roleplay is NOT something Shapes' dashboard can know on its own** --
+it's implemented by this bot injecting a short context note (from
+`social/data/identities.json`) into every request from a listed Discord ID, on top
+of whatever personality Shapes has configured. If Alice doesn't seem to pick up on
 it strongly enough in practice, the wording of that note (in
 `character/prompt_builder.py::_identity_context_note`) is the first
 place to tune -- I can't guarantee from documentation alone how much
@@ -318,7 +317,7 @@ Two TTS engines behind one switch (`VOICE_TTS_ENGINE`):
   or silent impostors are dropped before they reach the AI.
 
 ### STT Evaluation
-Accent robustness is measured on **your** voice, not public benchmarks:
+Accent robustness is measured against a **real recording, not a public benchmark**:
 1. Set `VOICE_STT_CAPTURE=true` and talk to the bot — clips land in
    `stt_eval/clips/` (self-limits at `VOICE_STT_CAPTURE_LIMIT`, default 200).
 2. `python manage.py eval-stt` generates `stt_eval/refs.csv` prefilled with
@@ -697,8 +696,33 @@ See `.env.example` for complete list.
 
 ## Security Note
 
-Your original `.env` had a live Discord bot token and OpenAI API key
-in plaintext, and both passed through the conversation that produced
-this rebuild. Please rotate both if you haven't already:
-- Discord Developer Portal -> your application -> Bot -> Reset Token
-- OpenAI dashboard -> API keys -> revoke the old one
+This project's original `.env` held a **live Discord bot token** and provider API keys in
+plaintext, and they passed through the conversation that produced this rebuild.
+
+**None of them appear in this repository or anywhere in its history.** The published
+copy was assembled from a filtered staging directory before the first commit: `.env`,
+the nested `Gemini-Voice-Splitter/.env`, every credential, all voice-model assets and
+training pipelines, private chat logs, real Discord user IDs, and the maintainer's
+identity were all excluded. What remains here is source code.
+
+A build of this project therefore starts with **no usable credentials at all** — there
+is no `.env` to inherit. Anyone setting it up must supply their own Discord bot token
+and provider keys, and should rotate them if they reuse any value from elsewhere:
+
+- **Discord bot token.** `Discord Developer Portal -> your application -> Bot ->
+  Reset Token` invalidates the previous one immediately, with no grace period. A bot
+  token *is* the bot's account, so this matters more than the API keys below.
+- **Provider keys.** Revoke anything reused from the original build: Groq, Hugging Face,
+  Gemini, fish.audio, and Shapes.inc (already deprecated upstream).
+
+The OpenAI key referenced in earlier revisions of this note is no longer used by the
+project; it now runs on Groq through the OpenAI-compatible API.
+
+If you are reading this because you forked it: the same discipline applies to your own
+`.env`. Do not commit it, and rotate anything that ever crossed a chat window — a
+hosted AI assistant is a third party, and anything you paste is in their logs.
+
+---
+
+*This repository is an unofficial, non-commercial fan project. See the note at the top
+of this file.*
