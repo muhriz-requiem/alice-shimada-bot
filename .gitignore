@@ -1,0 +1,83 @@
+# --- Secrets ---
+# The original .env held a live Discord bot token, a Groq key, and a Hugging Face
+# token; Gemini-Voice-Splitter/.env held three more. All rotated before publication.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa
+.netrc
+credentials*
+*secrets*.json
+
+# --- Environments ---
+venv/
+voice_env/
+timbre_env/
+env/
+.venv/
+
+# --- Python artifacts ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# --- Third-party binaries (hundreds of MB) ---
+ffmpeg_full/
+ffmpeg.zip
+ffmpeg.7z
+ffmpeg
+ffmpeg.exe
+
+# --- Voice model assets ---
+# Trained weights derived from a real person's voice. Deliberately not published;
+# see the note at the top of README.md.
+*.pt
+*.pth
+*.index
+model/
+data/voice_models/
+AliceVoiceExtraction/
+
+# --- Vendored third-party repos (own licenses + .git histories) ---
+Timbre/
+Gemini-Voice-Splitter/
+
+# --- Audio ---
+*.wav
+*.mp3
+downloads/
+
+# --- Runtime data: private logs, chat DB, caches, reddit snapshot ---
+data/
+state/
+logs/
+# (kept intentionally: the packages, not the data)
+
+# --- Editors / OS ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# --- Stray root-level experiment scripts (not part of the test suite) ---
+test_argos*.py
+test_deep.py
+test_fugashi*.py
+test_helsinki*.py
+test_sudachi*.py
+test_translate*.py
+fugashi_test_output.txt
+helsinki_output.txt
+sudachi_test_output.txt
+input_text.txt
+japanese_test_input*.txt
+translate_test.txt
+old_section*.txt

@@ -1,0 +1,31 @@
+from metrics.collector import (
+    init_metrics,
+    record_ai_request,
+    record_error,
+    record_gif_sent,
+    record_message,
+    record_rate_limit_wait,
+    record_reddit_refresh,
+    set_active_users,
+    set_emotion_state,
+    set_memory_graph_cap,
+    set_memory_graph_size,
+    set_reddit_posts,
+    set_uptime,
+)
+
+__all__ = [
+    "init_metrics",
+    "record_message",
+    "record_ai_request",
+    "record_reddit_refresh",
+    "set_reddit_posts",
+    "record_error",
+    "record_gif_sent",
+    "set_memory_graph_size",
+    "set_memory_graph_cap",
+    "set_emotion_state",
+    "record_rate_limit_wait",
+    "set_active_users",
+    "set_uptime",
+]
