@@ -1,8 +1,8 @@
 # AliceShimadaBot
 
-A modular Discord character bot with real-time voice. Personality/inference runs on
-[Groq](https://console.groq.com) by default (cloud, no local GPU needed, fast, free
-tier available), with a local Ollama backend for offline dev/testing.
+A modular Discord character bot with real-time voice. Alice listens to voice chat, tracks who is speaking, answers when she is addressed, and is shy on purpose: whether she takes a lull in the conversation is a probability you can tune, and when she catches only a *mention* of her name she peeks in cautiously — *"...was I being talked about?"*
+
+Personality/inference runs on [Groq](https://console.groq.com) by default (cloud, no local GPU needed, fast, free tier available), with a local Ollama backend for offline dev/testing. The fine-tuned voice model itself is not published (see the note below) — everything that makes her conversational is.
 
 > ## About this repository (published copy)
 >
@@ -67,7 +67,9 @@ voice/                Voice pipeline (v2.3 - GPT-SoVITS engine + conversation-aw
   turn_detector.py    Sample-based turn completion (7 states)
   response.py         Response decision engine (I1/I2/S1/S2)
   backchannel.py      Brief acknowledgment generation
+  soft_phrases.py     Curated name-mention clarifications (static EN+JA pool, no AI round-trip)
   mixer.py            Audio playback with barge-in
+  preprocess.py       STT audio preprocessing (noise floor, loudnorm, denoise)
   streaming_source.py Custom AudioSource — accepts PCM while playing
   streaming_tts.py    Sentence-by-sentence TTS streaming
   vad.py              Silero VAD wrapper
@@ -77,12 +79,13 @@ voice/                Voice pipeline (v2.3 - GPT-SoVITS engine + conversation-aw
   readiness.py        Mute-until-ready gate (warmup + fallback decision)
   rvc.py              RVC inference wrapper
   diarize.py          pyannote speaker diarization
+  dave_patch.py       discord-ext-voice-recv monkey-patches (DAVE decrypt, plain-frame recovery, per-packet resilience)
   utils.py            ffmpeg finder
 
-data/                 Reddit raw dumps + built post pools, memory.db
+data/                 Reddit raw dumps + built post pools, memory.db (created by the bot at first run)
 logs/                 Rotating log files
-voice_models/         RVC models (.pth + .index) + Piper models + alice_ref.wav (GPT-SoVITS reference)
-_legacy/              Original pre-rewrite files, kept for reference
+voice_models/         RVC models (.pth + .index) + Piper models + alice_ref.wav (GPT-SoVITS reference; assets not included in this copy)
+_legacy/              Original pre-rewrite files (not included in this copy)
 ```
 
 Adding a **second character** later = a new folder under
@@ -115,17 +118,17 @@ same codebase with isolated data directories.
    account -- `Discord Developer Portal -> your application -> Bot -> Reset Token`
    invalidates the previous one immediately. See "Security Note" at the end of this
    file.
-5. First Reddit data pull (the shipped `data/reddit/*_posts.json` files
-   already work out of the box, but to refresh them):
+4. First Reddit data pull. This copy ships no post data, so run this once to
+   build the pools:
    ```
    python manage.py refresh-reddit
    ```
-6. Run locally: `python main.py`
-7. Voice (optional): `VOICE_ENABLED=true` plus an engine —
+5. Run locally: `python main.py`
+6. Voice (optional): `VOICE_ENABLED=true` plus an engine —
    `VOICE_TTS_ENGINE=sovits` needs the GPT-SoVITS install (auto-started
    and health-checked by the bot), `edge` works anywhere with no local
    server. See **Voice Capabilities** below.
-8. Verify the install: run `/voice-status` in a voice channel — it shows
+7. Verify the install: run `/voice-status` in a voice channel — it shows
    "Soft Responses" (name-mention clarification replies) and "Diarization"
    (speaker stats if `VOICE_DIARIZE_MODE=detect|address`), plus the torch
    device and CUDA availability.
@@ -140,7 +143,6 @@ same codebase with isolated data directories.
 ### Observability
 - **Structured JSON logging**: Enable with `LOG_JSON=true` for log aggregation
 - **Prometheus metrics**: `/metrics` endpoint with AI latency, message rates, error counts, memory size, Reddit pool sizes
-- **Grafana dashboard**: `grafana_dashboard.json` for quick visualization
 
 ### Prompt Engineering
 - **Jinja2 templates**: System prompt moved to `templates/system_prompt.j2` for maintainability
@@ -151,7 +153,7 @@ same codebase with isolated data directories.
 - **Config-driven emotion constants**: No code changes needed to tune behavior
 
 ### Testing & Quality
-- **Unit tests**: 60 tests covering pure modules (postprocess, memory_shaping, intents, router, rotation)
+- **Unit tests**: 140+ tests covering pure modules (postprocess, memory_shaping, intents, router, rotation) and the Groq client
 - **CI/CD**: GitHub Actions workflow (lint → typecheck → test)
 - **Type checking**: mypy with strict config
 - **Linting**: ruff with auto-fix
@@ -309,6 +311,7 @@ Two TTS engines behind one switch (`VOICE_TTS_ENGINE`):
 - **Turn Detection**: Sample-based timing for accurate speech completion
 - **Backchannels**: Brief acknowledgments (mm, uh-huh / うん, ううん) during natural pauses
 - **Barge-In**: Owner can interrupt Alice's response
+- **Voice receive resilience**: `voice/dave_patch.py` wraps discord-ext-voice-recv methods (rather than editing site-packages) to decrypt Discord's DAVE (E2EE) incoming audio and survive corrupt packets — pip upgrades don't undo it
 - **Language Support**: Fixed-language STT by default (`en`, detection off to save time/resources); `VOICE_STT_LANGUAGE=auto` re-enables detection via faster-whisper, `ja` selects the Japanese Moonshine model
 - **Japanese Accent**: On the edge engine, a Japanese TTS voice + RVC model gives Alice a natural Japanese accent when speaking English — lore-accurate for a Japanese character (the sovits engine speaks English in Alice's own fine-tuned timbre instead)
 - **STT Evaluation**: `VOICE_STT_CAPTURE=true` saves raw voice clips + sidecars to `stt_eval/clips/`; `python manage.py eval-stt` scores candidate engines/preprocessing on your own speech (see "STT Evaluation" below). Off by default.
@@ -362,7 +365,9 @@ voice/
   turn_detector.py    Sample-based turn completion detection (7 states)
   response.py         Response decision engine (I1/I2/S1/S2 framework)
   backchannel.py      Brief acknowledgment generation (うん, そう, etc.)
+  soft_phrases.py     Static name-mention clarification pool (EN + JA)
   mixer.py            Audio playback with barge-in support
+  preprocess.py       Audio preprocessing shared by the live pipeline and the offline STT eval
   streaming_source.py Custom discord.AudioSource — accepts PCM while playing
   streaming_tts.py    Sentence-by-sentence TTS with parallel synthesis
   vad.py              Silero VAD wrapper with RMS fallback
@@ -372,6 +377,7 @@ voice/
   readiness.py        Mute-until-ready gate (warmup + fallback decision)
   rvc.py              RVC inference + soften_human() post-processing
   diarize.py          pyannote speaker diarization
+  dave_patch.py       discord-ext-voice-recv monkey-patches (DAVE decrypt, packet resilience)
   utils.py            ffmpeg finder utility
 ```
 
@@ -404,6 +410,9 @@ This makes her feel more responsive without jumping into a conversation.
   clarification phrase
 - `VOICE_NAME_MENTION_RESPONSE=skip`: original behavior — stay silent on
   S2 mentions
+
+The clarifications come from a static EN+JA phrase pool (`voice/soft_phrases.py`) —
+no AI round-trip, so peeking in costs almost no latency.
 
 ### Diarization Mode
 
