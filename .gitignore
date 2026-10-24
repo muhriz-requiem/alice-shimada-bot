@@ -57,9 +57,11 @@ downloads/
 
 # --- Runtime data: private logs, chat DB, caches, reddit snapshot ---
 data/
-state/
 logs/
-# (kept intentionally: the packages, not the data)
+# (`state/` is deliberately NOT ignored: it is the Redis shared-state source
+#  package, not runtime data. A blanket `state/` ignore here silently dropped
+#  the whole package from this publication and broke every module that
+#  imports it -- keep it tracked.)
 
 # --- Editors / OS ---
 .idea/
