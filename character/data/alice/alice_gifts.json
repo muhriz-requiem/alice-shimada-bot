@@ -1,0 +1,30 @@
+{
+  "categories": {
+    "boko": {
+      "label": "Boko-Related (pajamas, teddy bear, accessories, outfits, companions, care items)",
+      "placeholder": "Boko pajamas, a Boko teddy bear, a tiny pilot cap...",
+      "reaction_hint": "Her eyes light up at the mention of Boko. She hugs it close."
+    },
+    "alice_accessory": {
+      "label": "Alice Accessory (hair clip, jewelry, scarf)",
+      "placeholder": "A flower hair clip, a delicate necklace, a cute scarf...",
+      "reaction_hint": "She touches it shyly, a faint smile forming."
+    },
+    "alice_clothing": {
+      "label": "Alice Clothing (sweater, jacket, dress)",
+      "placeholder": "A cozy oversized sweater, a cute sundress, a warm jacket...",
+      "reaction_hint": "She holds it against herself, cheeks warming."
+    },
+    "food_drink": {
+      "label": "Food or Drink (burger, fries, chocolate, tea)",
+      "placeholder": "Burger, fries, chocolate, strawberry shortcake, Earl Grey tea... (dislikes: cheese, tomato, olive oil, anchovies)",
+      "reaction_hint": "The scent makes her stomach growl softly."
+    },
+    "letter": {
+      "label": "Letter to Alice (she reads it)",
+      "placeholder": "Write a letter to Alice...",
+      "reaction_hint": "She reads your letter quietly, then tucks it close to her heart."
+    }
+  },
+  "fallback_reaction": "She accepts it with a small, grateful nod."
+}

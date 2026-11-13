@@ -2,9 +2,31 @@
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+# Top-level importable modules of the bot (config is imported by both the
+# Discord bot and the desktop companion; stt_eval by manage.py).
+py-modules = ["config", "stt_eval"]
+
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["*"]
+# Explicit package list: the bot + desktop companion. Everything else at
+# the root (datasets, tooling, vendored experiments) is not part of the
+# installable package. Desktop tools/ are dev probes, not runtime code.
+include = [
+    "ai", "ai.*",
+    "bot", "bot.*",
+    "cogs", "cogs.*",
+    "character", "character.*",
+    "desktop", "desktop.*",
+    "emotion", "emotion.*",
+    "health", "health.*",
+    "memory", "memory.*",
+    "metrics", "metrics.*",
+    "reddit", "reddit.*",
+    "social", "social.*",
+    "state", "state.*",
+    "voice", "voice.*",
+]
 exclude = ["tests*", "_legacy*", "venv*", "__pycache__*"]
 
 [project]

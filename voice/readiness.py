@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
 from typing import Optional
 
 from bot.logging_setup import get_logger
@@ -31,6 +32,18 @@ _PROBE_RETRY_DELAY = 3.0
 
 _state = STATE_STARTING
 _task: Optional[asyncio.Task] = None
+# Optional callbacks (registered via kick(on_ready=...)) that run once
+# a TTS engine is confirmed usable. Used to defer heavy preloads (and
+# the live-mode backchannel bank build) until the GPU isn't fighting
+# the TTS warm-up. Each callback should return quickly (spawn
+# background threads/tasks) since it runs on the event loop.
+_on_ready_hooks: list[Callable[[], None]] = []
+
+# After falling back to Edge-TTS, keep re-probing GPT-SoVITS this many
+# poll cycles (each _POLL_INTERVAL apart) so a slow-starting local
+# server can still take over mid-session instead of Alice being stuck
+# on the fallback voice permanently.
+_UPGRADE_ATTEMPTS = 12
 
 
 def state() -> str:
@@ -41,9 +54,17 @@ def is_ready() -> bool:
     return _state in (STATE_READY, STATE_FALLBACK)
 
 
-def kick() -> None:
-    """Start the background readiness loop (idempotent)."""
+def kick(on_ready: Optional[Callable[[], None]] = None) -> None:
+    """Start the background readiness loop (idempotent).
+
+    on_ready, when given, is queued and runs once as soon as a TTS
+    engine is confirmed usable (ready, or the fallback state settling
+    with no upgrade possible). Calling kick again with or without a
+    callback never restarts the loop.
+    """
     global _task
+    if on_ready is not None:
+        _on_ready_hooks.append(on_ready)
     if _task is not None and not _task.done():
         return
     try:
@@ -53,14 +74,39 @@ def kick() -> None:
     _task = loop.create_task(_run())
 
 
+def _fire_on_ready_hook() -> None:
+    """Run (once, draining) the deferred on-ready callbacks."""
+    global _on_ready_hooks
+    hooks, _on_ready_hooks = _on_ready_hooks, []
+    if not hooks:
+        return
+    log.info(f"TTS engine confirmed; running {len(hooks)} deferred on-ready hook(s)")
+    for hook in hooks:
+        try:
+            hook()
+        except Exception as e:
+            log.warning(f"Readiness on-ready hook failed: {e}")
+
+
 async def _run() -> None:
-    while not is_ready():
+    fallback_upgrades = 0
+    while True:
         try:
             await _refresh()
         except Exception as e:
             log.warning(f"Readiness check error: {e}")
-        if is_ready():
+        if _state == STATE_READY:
+            _fire_on_ready_hook()
             break
+        if _state == STATE_FALLBACK:
+            fallback_upgrades += 1
+            if fallback_upgrades >= _UPGRADE_ATTEMPTS:
+                log.info(
+                    "Upgrade polling window ended; staying on Edge-TTS "
+                    "fallback until the next restart"
+                )
+                _fire_on_ready_hook()
+                break
         await asyncio.sleep(_POLL_INTERVAL)
 
 

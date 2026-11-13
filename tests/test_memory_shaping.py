@@ -23,9 +23,9 @@ class TestClassifyMemory:
         assert classify_memory("I trust you") == "EMOTION"
 
     def test_identity_keywords(self):
-        keywords = ["the maintainer", "father", "chiyo", "mother"]
+        keywords = ["alex", "father", "chiyo", "mother"]
         assert classify_memory("My father is here", keywords) == "IDENTITY"
-        assert classify_memory("the maintainer is my dad", keywords) == "IDENTITY"
+        assert classify_memory("Alex is my dad", keywords) == "IDENTITY"
         assert classify_memory("Chiyo is my mother", keywords) == "IDENTITY"
 
     def test_general_fallback(self):
@@ -77,7 +77,7 @@ class TestSanitizeMemory:
 class TestFormatMemory:
     def test_formats_with_classification(self):
         snippets = ["My name is Alice", "I feel happy", "Hello there"]
-        result = format_memory(snippets, ["the maintainer"])
+        result = format_memory(snippets, ["alex"])
         lines = result.split("\n")
         assert len(lines) == 3
         assert lines[0].startswith("[FACT]")
@@ -95,6 +95,6 @@ class TestFormatMemory:
         assert format_memory(None) == "None"
 
     def test_identity_keywords_passed_through(self):
-        snippets = ["the maintainer is here"]
-        result = format_memory(snippets, ["the maintainer"])
+        snippets = ["Alex is here"]
+        result = format_memory(snippets, ["alex"])
         assert "[IDENTITY]" in result

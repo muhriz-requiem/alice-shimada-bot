@@ -49,6 +49,84 @@ _TPM_WINDOW_SECONDS = 60.0
 _TPM_TARGET_FRACTION = 0.9
 
 
+class ChatStream:
+    """
+    Handle over a streaming completion for the live voice path.
+
+    `generate_reply_stream` establishes the HTTP stream (same throttle
+    and retry gates as generate_reply) and hands back this object; the
+    caller consumes raw text deltas with iter_chunks() while the reply
+    is still generating, then applies postprocess cleaning itself.
+
+    State exposed while iterating: ``first_token_at`` (monotonic clock,
+    set on the first visible delta), ``finished`` (stream ended),
+    ``error`` (set when the connection dropped mid-stream -- deltas up
+    to that point are still valid). Usage accounting happens through
+    the on_usage callback fed with the final usage chunk
+    (stream_options={"include_usage": True}).
+    """
+
+    __slots__ = (
+        "_chunks", "_on_usage", "_user_id", "_t0",
+        "first_token_at", "finished", "error", "coalesce",
+    )
+
+    def __init__(self, chunks, *, on_usage=None, user_id: str = "", t0: float = 0.0) -> None:
+        self._chunks = chunks
+        self._on_usage = on_usage
+        self._user_id = user_id
+        self._t0 = t0
+        self.first_token_at: float | None = None
+        self.finished: bool = False
+        self.error: Exception | None = None
+        self.coalesce: list[str] = []  # raw text, for callers that want it all
+
+    def iter_chunks(self):
+        return self._iter()
+
+    async def _iter(self):
+        try:
+            async for chunk in self._chunks:
+                usage = getattr(chunk, "usage", None)
+                if usage is not None and self._on_usage is not None:
+                    self._on_usage(chunk)
+                choices = getattr(chunk, "choices", None)
+                if not choices:
+                    continue
+                delta = getattr(choices[0], "delta", None)
+                text = getattr(delta, "content", None)
+                if not text:
+                    continue
+                if self.first_token_at is None:
+                    self.first_token_at = time.monotonic()
+                self.coalesce.append(text)
+                yield text
+        except Exception as e:  # noqa: BLE001 - mid-stream drop isn't fatal
+            self.error = e
+            log.warning(
+                f"Groq stream interrupted after {len(self.coalesce)} "
+                f"deltas for user={self._user_id}: {e}"
+            )
+        finally:
+            self.finished = True
+            if self.error is None and not self.coalesce:
+                log.warning(
+                    f"Groq stream produced no visible content for "
+                    f"user={self._user_id} (latency="
+                    f"{time.monotonic() - self._t0:.2f}s) -- "
+                    "reasoning likely consumed the budget"
+                )
+
+    async def text(self) -> str:
+        """Drain the whole stream and return the raw reply text."""
+        parts: list[str] = []
+        async for delta in self.iter_chunks():
+            parts.append(delta)
+        return "".join(parts)
+
+
+
+
 class GroqClient(AIClient):
     def __init__(self) -> None:
         self._client = AsyncOpenAI(
@@ -150,6 +228,42 @@ class GroqClient(AIClient):
             return max(float(raw), 0.0)
         except (AttributeError, TypeError, ValueError):
             return None
+
+    async def vision_chat(
+        self,
+        messages: list[dict],
+        *,
+        user_id: str,
+        channel_id: str,
+        model: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float = 0.5,
+    ) -> str:
+        """One multimodal (image + text) completion. Used by the screen
+        glance feature; shares the RPM throttle and the rolling TPM
+        window with text chat so glances can't stampede the free tier.
+
+        Returns the reply text; raises on failure (caller decides).
+        Vision models are never gpt-oss -> no reasoning_effort knob, and
+        no stop-sequence guard (those tokens belong to the chat model).
+        """
+        use_model = model or config.SCREEN_LOOK_MODEL
+        await self._throttle()
+        start = time.monotonic()
+        response = await self._client.chat.completions.create(
+            model=use_model,
+            messages=messages,
+            max_tokens=max_tokens or 120,
+            temperature=temperature,
+        )
+        self._record_tpm(response)
+        text = (response.choices[0].message.content or "").strip()
+        log.info(
+            f"Groq vision ok model={use_model} user={user_id} "
+            f"({time.monotonic() - start:.1f}s, "
+            f"{len(text)} chars)"
+        )
+        return text
 
     async def generate_reply(
         self,
@@ -271,3 +385,111 @@ class GroqClient(AIClient):
 
         log.error(f"Groq request failed for user={user_id}: {last_error}")
         return FALLBACK_REPLY
+
+    async def generate_reply_stream(
+        self,
+        messages: list[dict],
+        *,
+        user_id: str,
+        channel_id: str,
+        max_tokens: int | None = None,
+    ) -> "ChatStream | None":
+        """
+        Streaming variant of generate_reply for the live voice path.
+
+        Establishes the completion stream with the same throttle/TPM
+        gates and retry/backoff policy as generate_reply (retries cover
+        *starting* the stream; a drop mid-stream surfaces through
+        ChatStream.error) and returns the ChatStream immediately, so
+        the caller can synthesize sentences from early deltas before
+        the reply finishes generating.
+
+        Returns None when the stream could not be established within
+        the retry budget; the caller falls back to the non-streaming
+        generate_reply path. The caller applies postprocess cleaning
+        per-sentence (see ai.postprocess.clean_stream_sentence).
+        """
+        if not await self._tpm_budget_ok():
+            log.info(
+                f"Groq TPM budget exhausted (streaming) -- dropping "
+                f"request for user={user_id}"
+            )
+            return None
+
+        await self._throttle()
+        start = time.monotonic()
+
+        effort = config.GROQ_REASONING_EFFORT.strip()
+        extra: dict = {}
+        if effort and "gpt-oss" in self._model:
+            extra["reasoning_effort"] = effort
+
+        params: dict = {
+            "model": self._model,
+            "messages": messages,
+            "max_tokens": max_tokens or config.GROQ_MAX_TOKENS,
+            "stop": ["<|endoftext|>", "<|im_end|>"],
+            "stream": True,
+        }
+
+        include_usage = True
+        last_error: Exception | None = None
+
+        for attempt in range(2):
+            try:
+                call_kwargs = dict(params)
+                if include_usage:
+                    call_kwargs["stream_options"] = {"include_usage": True}
+                stream = await self._client.chat.completions.create(
+                    **extra,
+                    **call_kwargs,
+                )
+                log.info(
+                    f"Groq stream started user={user_id} "
+                    f"(t={time.monotonic() - start:.2f}s)"
+                )
+                return ChatStream(
+                    stream, on_usage=self._record_tpm,
+                    user_id=user_id, t0=start,
+                )
+
+            except RateLimitError as e:
+                last_error = e
+                hinted = self._retry_after_seconds(e)
+                backoff = hinted if hinted is not None else float(attempt + 1)
+                if backoff > config.GROQ_RETRY_MAX_WAIT:
+                    log.info(
+                        f"Groq stream rate limited with retry-after "
+                        f"{backoff:.1f}s > max "
+                        f"{config.GROQ_RETRY_MAX_WAIT:.1f}s -- failing fast"
+                    )
+                    return None
+                log.warning(f"Groq stream rate limited, backing off {backoff}s")
+                await asyncio.sleep(backoff)
+
+            except (APIConnectionError, APITimeoutError) as e:
+                last_error = e
+                if attempt == 0:
+                    log.warning(f"Groq stream connection issue (will retry): {e}")
+                    await asyncio.sleep(1.5)
+                    continue
+                log.error(f"Groq stream connection issue: {e}")
+                return None
+
+            except APIError as e:
+                last_error = e
+                status = getattr(e, "status_code", None)
+                if attempt == 0 and status == 400 and "stream_options" in str(e):
+                    log.info("Groq rejected stream_options; retrying stream without it")
+                    include_usage = False
+                    continue
+                log.error(f"Groq stream API error: {e}")
+                return None
+
+            except Exception as e:  # noqa: BLE001 - never crash the caller
+                last_error = e
+                log.error(f"Unexpected Groq stream error: {e}")
+                return None
+
+        log.error(f"Groq stream failed to start for user={user_id}: {last_error}")
+        return None

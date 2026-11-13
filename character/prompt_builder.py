@@ -323,6 +323,102 @@ def build_prompt(
     )
 
 
+def build_voice_prompt(
+    character: Character,
+    *,
+    identity: dict | None,
+    relationship_key: str | None,
+    history: list[dict],
+    user_message: str,
+    extra_context: str | None = None,
+) -> list[dict]:
+    """
+    Compact voice-call prompt for token efficiency.
+
+    Voice replies spend the whole prompt against Groq's free-tier
+    8,000-token/min window, and a live call can stack 3-6 turns before
+    that window resets -- the full lore template (~2k tokens) dropped
+    real replies ("TPM budget exhausted"). This keeps the persona
+    essentials the voice pipeline actually needs: who she is, who she's
+    talking to, the Boko fact, relationship tone, one style example --
+    and drops full lore, memory text, and long example lists (text
+    /chat keeps those).
+
+    The LISTENING NOTE tells her how to handle imperfect speech-
+    recognition transcripts: ask for a repeat instead of inventing
+    meaning, and never treat garbled past turns as facts. History keeps
+    the honest record (junk included); the response decides the behavior.
+    """
+    # Minimal never_say - just the most critical
+    never_say_block = 'NEVER SAY: "How can I help?", "As an AI", "I am an assistant"'
+
+    examples = character.full_examples
+    baseline_examples, matched_tag, matched_examples = _select_examples(examples, identity)
+    examples_text = (
+        "\n".join(baseline_examples[:1]) if baseline_examples else "None"
+    )  # Only first 1 example
+
+    # Maps avatar/relationship-specific tone examples to the current
+    # speaker (same rule as the full prompt: only used for that person).
+    relationship_examples_block = ""
+    if matched_examples and matched_tag:
+        listed = "\n".join(matched_examples[:1])
+        relationship_examples_block = (
+            f"\nPER-SPEAKER EXAMPLE (only because you are speaking with "
+            f"{matched_tag} right now):\n{listed}"
+        )
+
+    # Ultra-minimal identity block
+    ident = identity or {}
+    name = ident.get("name") or "someone she doesn't know"
+    role = ident.get("role") or "an unfamiliar person"
+    identity_block = f"WHO SHE'S TALKING TO: {name} ({role})"
+
+    # Ultra-minimal core facts - only Boko
+    essential_facts = {
+        k: v for k, v in character.core_facts.items() if 'boko' in k.lower()
+    }
+    core_facts_lines = "\n".join(
+        f"- {name}: {fact}" for name, fact in essential_facts.items()
+    )
+    core_facts_block = "CORE FACTS:\n" + core_facts_lines
+
+    tone = character.relationship_tone(relationship_key) if relationship_key else {
+        "tone": "neutral", "trust": 0.5, "warmth": 0.5,
+    }
+
+    system_parts = [
+        f"You are {character.display_name}. A person in a live Discord voice call.",
+        "Speak naturally. Short sentences. Use \"...\" sparingly to trail off or show quietness.",
+        never_say_block,
+        identity_block,
+        core_facts_block,
+        f"RELATIONSHIP: Tone={tone['tone']}, Trust={tone['trust']}, Warmth={tone['warmth']}",
+        "STYLE EXAMPLES:",
+        examples_text,
+        relationship_examples_block,
+        "LISTENING NOTE: You hear the user through speech recognition; "
+        "transcripts can be garbled or incomplete. If the latest message "
+        "is unintelligible or makes no sense in context, do NOT invent "
+        "what they meant -- briefly ask them to say it again, in "
+        "character. Treat garbled earlier turns as 'you didn't hear it "
+        "well', never as facts.",
+        "HARD RULE: Never stammer (no \"F-Father\" / \"H-Hi\" fragments). "
+        "Ellipses (...) are fine -- use them sparingly for quiet, trailing-off moments.",
+        "FINAL: Stay in character. No assistant tone. Reply ONLY as "
+        + character.display_name + ".",
+    ]
+
+    system_prompt = "\n\n".join(part for part in system_parts if part.strip())
+
+    messages: list[dict] = [{"role": "system", "content": system_prompt}]
+    if extra_context:
+        messages.append({"role": "system", "content": extra_context})
+    messages.extend(history)
+    messages.append({"role": "user", "content": user_message})
+    return messages
+
+
 def build_gift_prompt(
     character: Character,
     *,

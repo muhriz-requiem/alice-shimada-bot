@@ -102,6 +102,185 @@ def cmd_eval_stt(args: argparse.Namespace) -> None:
     stt_eval.run(Path(config.STT_EVAL_DIR), args.beam, args.modes, args.candidates, args.clips)
 
 
+def cmd_latency(args: argparse.Namespace) -> None:
+    """Latency harness: replay a WAV turn through the real voice pipeline.
+
+    Builds a stub bot + the genuine VoicePipeline, forces TTS readiness,
+    then runs the turn end-to-end args.repeat times with REAL Groq and
+    TTS/STT calls -- only the Discord playback loop is skipped (no voice
+    client exists in the harness). Collects the pipeline's own
+    'Voice stage timing' lines and prints p50/p95 per stage plus TTFA,
+    so agent runs can measure Phase 0..3 improvements without a human
+    speaking.
+    """
+    import asyncio
+    import logging
+    import re
+    import statistics
+    import time
+
+    import numpy as np
+    import scipy.io.wavfile as wavfile
+    import scipy.signal
+
+    from ai import get_ai_client
+    from character import load_character
+    from voice import readiness
+    from voice.pipeline import VoicePipeline
+    from voice.response import ResponseDecision
+
+    wav_path = Path(args.wav)
+    if not wav_path.exists():
+        print(f"ERROR: wav not found: {wav_path}")
+        sys.exit(1)
+
+    class _StubUser:
+        id = int(args.user)
+
+    class _StubBot:
+        pass
+
+    bot = _StubBot()
+    bot.user = _StubUser()
+    bot.character = load_character(config.CHARACTER_NAME)
+    bot.ai_client = get_ai_client()
+
+    pipeline = VoicePipeline(bot)
+    # The harness never runs readiness._run(); force READY so TTS paths
+    # accept work. (The GPT-SoVITS server itself must be up separately.)
+    readiness._state = readiness.STATE_READY
+
+    user_id = int(args.user)
+    guild_id = 0
+
+    async def _run() -> None:
+        print(f"Load turn WAV: {wav_path.name}")
+        sr, raw = wavfile.read(str(wav_path))
+        if raw.dtype == np.int16:
+            audio = raw.astype(np.float32) / 32768.0
+        elif raw.dtype == np.int32:
+            audio = raw.astype(np.float32) / 2147483648.0
+        else:
+            audio = np.asarray(raw, dtype=np.float32)
+        if audio.ndim > 1:
+            audio = audio.mean(axis=1)
+        if sr != 48000:
+            audio = scipy.signal.resample(
+                audio, int(len(audio) * 48000 / sr)
+            ).astype(np.float32)
+        print(
+            f"Audio: {len(audio)/48000:.2f}s @48k | text: {args.text!r} | "
+            f"live={config.VOICE_LIVE_MODE} stt={config.VOICE_STT_ENGINE} "
+            f"tts={config.VOICE_TTS_ENGINE}"
+        )
+
+        timing_pat = re.compile(
+            r"silence=(?P<silence>-?[0-9.]+) "
+            r"stt=(?P<stt>-?[0-9.]+|-) "
+            r"decision=(?P<decision>-?[0-9.]+|-) "
+            r"ai_first=(?P<ai_first>-?[0-9.]+|-) "
+            r"tts_first=(?P<tts_first>-?[0-9.]+|-) "
+            r"ttfa=(?P<ttfa>-?[0-9.]+|-)"
+        )
+        stage_values: dict[str, list[float]] = {}
+        ttfa_values: list[float] = []
+        wall_values: list[float] = []
+        # The timing handler can't know which run a log line belongs to,
+        # so the loop toggles this off during warmup -- otherwise the
+        # cold first response dominates TTFA's p95 forever.
+        capture = {"active": False}
+
+        class _TimingCapture(logging.Handler):
+            """Pull per-run stage numbers out of the pipeline's log line."""
+
+            def emit(self, record: logging.LogRecord) -> None:
+                if not capture["active"]:
+                    return
+                msg = record.getMessage()
+                if "Voice stage timing:" not in msg:
+                    return
+                m = timing_pat.search(msg.split("Voice stage timing:", 1)[1])
+                if not m:
+                    return
+                for key, val in m.groupdict().items():
+                    if val in (None, "", "-"):
+                        continue
+                    try:
+                        value = float(val)
+                    except ValueError:
+                        continue
+                    if key == "ttfa":
+                        ttfa_values.append(value)
+                    else:
+                        stage_values.setdefault(key, []).append(value)
+
+        handler = _TimingCapture()
+        pl_logger = logging.getLogger("voice.pipeline")
+        pl_logger.addHandler(handler)
+        try:
+            total = args.warmup + args.repeat
+            for i in range(total):
+                label = "warmup" if i < args.warmup else f"run{i - args.warmup + 1}"
+                capture["active"] = label != "warmup"
+                pipeline._last_reply[guild_id] = 0.0  # ignore reply cooldown
+                # record_response() also stamps a cooldown on the decision
+                # engine itself; without resetting it every post-warmup run
+                # would be skipped ("decision=skip -- no reply measured").
+                pipeline.response_engine._cooldown_until[guild_id] = 0.0
+                pipeline.response_engine._last_response[guild_id] = 0.0
+                t0 = time.monotonic()
+                result = await pipeline.process_audio(guild_id, user_id, audio, 48000)
+                if not result:
+                    print(f"[{label}] no transcript (STT cold start?)")
+                    continue
+                text, language = result
+                decision, _prio = pipeline.response_engine.should_respond(
+                    guild_id, user_id, text,
+                    is_owner=True, others_present=False,
+                )
+                if decision != ResponseDecision.RESPOND:
+                    print(f"[{label}] decision={decision.value} -- no reply measured")
+                    continue
+                await pipeline._generate_and_respond(
+                    guild_id, user_id, text, True, language,
+                    t_speech_end=t0,
+                    silence=0.3,
+                )
+                wall = time.monotonic() - t0
+                if capture["active"]:  # warmup wall stays out of the stats
+                    wall_values.append(wall)
+                print(f"[{label}] decided=RESPOND wall={wall*1000:.0f}ms")
+        finally:
+            pl_logger.removeHandler(handler)
+
+        def _pct(values: list[float], p: float) -> float:
+            vals = sorted(values)
+            idx = min(len(vals) - 1, int(round(p * (len(vals) - 1))))
+            return vals[idx]
+
+        print()
+        if ttfa_values:
+            print(f"TTFA  ({len(ttfa_values)} replies): "
+                  f"p50={_pct(ttfa_values, 0.5):.2f}s p95={_pct(ttfa_values, 0.95):.2f}s "
+                  f"mean={statistics.mean(ttfa_values):.2f}s")
+        else:
+            print("TTFA: no complete reply (TTS engine unavailable?)")
+        if wall_values:
+            print(f"Wall  ({len(wall_values)} replies): "
+                  f"p50={_pct(wall_values, 0.5):.2f}s p95={_pct(wall_values, 0.95):.2f}s")
+        if stage_values:
+            print("Stage p50/p95:")
+            for stage in sorted(stage_values):
+                vals = stage_values[stage]
+                print(f"  {stage:<10} p50={_pct(vals, 0.5):.2f}s p95={_pct(vals, 0.95):.2f}s")
+        print()
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        pass
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="AliceShimadaBot maintenance CLI")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -137,6 +316,16 @@ def main() -> None:
     p_eval.add_argument("--clips", nargs="+", default=None,
                         help="Subset of clip stems to score")
     p_eval.set_defaults(func=cmd_eval_stt)
+
+    p_lat = sub.add_parser("latency", help="Live-voice latency harness (real AI/TTS calls)")
+    p_lat.add_argument("--wav", required=True, help="Turn audio WAV to replay through the pipeline")
+    p_lat.add_argument("--text", default="Alice, did you eat lunch today?",
+                       help="Hint text ignored by STT (documented intent of the clip)")
+    p_lat.add_argument("--repeat", type=int, default=5, help="Timed runs after warmup")
+    p_lat.add_argument("--warmup", type=int, default=1, help="Warmup runs excluded from stats")
+    p_lat.add_argument("--user", default="100000000000000000",
+                       help="Fake Discord user id for the harness")
+    p_lat.set_defaults(func=cmd_latency)
 
     args = parser.parse_args()
     args.func(args)

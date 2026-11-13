@@ -42,13 +42,18 @@ class ResponsePriority(Enum):
 class ResponseDecisionEngine:
     """
     Decides whether Alice should respond in a voice conversation.
-    
+
     Implements the I1/I2/S1/S2 framework from research:
     - I1 (Explicit Address): Direct mention -> Always respond
     - I2 (Contextual Intervention): Topic shift, lull -> Maybe respond
     - S1 (No Reference): Others chatting -> Stay silent
     - S2 (Referenced, not addressed): Third-party mention -> Stay silent
-    
+
+    Shared-call governor: when another human is in the voice channel
+    (others_present, see should_respond), the I2 "maybe join" paths are
+    suppressed and only I1 direct address (plus barge-ins) gets through --
+    people in group calls talk to each other, not to Alice.
+
     Alice's personality (shy/quiet) means:
     - Conservative response probability
     - Prefers to be spoken to directly
@@ -75,12 +80,18 @@ class ResponseDecisionEngine:
         text: str,
         is_owner: bool = False,
         diarize_result: Optional[list[dict]] = None,
+        others_present: bool = False,
     ) -> tuple[ResponseDecision, ResponsePriority]:
         """
         Decide whether Alice should respond to an utterance.
-        
-        Returns:
-            (decision, priority) tuple
+
+        Args:
+            others_present: another non-bot human is in the voice channel
+                right now (pipeline reads channel members). With
+                VOICE_SHARED_CALL_GOVERNOR on, that suppresses owner
+                priority, lull joins, and backchannels, and her name --
+                or interrupting her -- becomes the only way in.
+            diarize_result: optional speaker segments for multi-speaker checks.
         """
         now = time.time()
 
@@ -120,8 +131,20 @@ class ResponseDecisionEngine:
             return ResponseDecision.RESPOND, ResponsePriority.HIGH
 
         # mode == "smart" (default): fall through to full decision logic.
-        # Owner priority: always respond even without direct address.
-        if is_owner and config.VOICE_OWNER_PRIORITY:
+
+        # Shared-call governor: with another human in the voice channel,
+        # most speech is side conversation between the people present
+        # ("you're not that sweet" said to a friend), not a prompt for
+        # Alice. She then only speaks when addressed by name (I1 below);
+        # owner priority, lull joins, and backchannels all take the day
+        # off. Interrupting her reply (barge-in) still works.
+        shared = others_present and config.VOICE_SHARED_CALL_GOVERNOR
+
+        # Owner priority: respond without direct address -- but only when
+        # the call is private. In a shared call the owner is usually
+        # talking to the other people in it, so she requires her name
+        # like everyone else.
+        if is_owner and config.VOICE_OWNER_PRIORITY and not shared:
             return ResponseDecision.RESPOND, ResponsePriority.CRITICAL
 
         # --- I1: Explicit Address ---
@@ -164,14 +187,16 @@ class ResponseDecisionEngine:
 
         # --- I2: Contextual Intervention ---
 
-        # Owner gets special treatment - always respond in conversation lull
-        if is_owner and turn_state == TurnState.LULL:
+        # Owner gets special treatment - respond in conversation lull
+        # (private calls only; a group-call lull may just mean the humans
+        # paused for breath).
+        if is_owner and turn_state == TurnState.LULL and not shared:
             owner_chance = 0.7
             if random.random() < owner_chance:
                 return ResponseDecision.RESPOND, ResponsePriority.MEDIUM
 
-        # Conversation lull - Alice might join
-        if turn_state == TurnState.LULL:
+        # Conversation lull - Alice might join (private calls only)
+        if turn_state == TurnState.LULL and not shared:
             alice_silence = self.conversation.get_alice_silence_duration(guild_id)
             # Only join if Alice hasn't spoken recently
             if alice_silence > 10:
@@ -182,8 +207,13 @@ class ResponseDecisionEngine:
 
         # --- Backchannel Detection ---
 
-        # Brief utterances often just need acknowledgment
-        if self._should_backchannel(guild_id, user_id, text, diarize_result=diarize_result):
+        # Brief utterances often just need acknowledgment (private calls
+        # only: an "mm" targeted at nobody in particular is still her
+        # butting into the group's conversation).
+        if (
+            not shared
+            and self._should_backchannel(guild_id, user_id, text, diarize_result=diarize_result)
+        ):
             return ResponseDecision.BACKCHANNEL, ResponsePriority.LOW
 
         # --- Default: Stay Silent ---

@@ -16,6 +16,7 @@ Both engines return the same result dict shape.
 from __future__ import annotations
 
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -68,6 +69,23 @@ def _resolved_language(language: Optional[str] = None) -> Optional[str]:
     return None
 
 
+def _warm_cuda_dlls() -> None:
+    """Load torch's bundled cublas/cudart into the process so
+    ctranslate2 (faster-whisper) finds them by name. Needed when STT
+    initializes before any other torch CUDA user (e.g. the latency
+    harness, which skips the VAD preload)."""
+    if config.VOICE_STT_DEVICE == "cuda":
+        try:
+            import torch
+            # A trivial CUDA op forces torch to load its bundled DLLs
+            # (cublas64_12.dll, cudart64_12.dll) into the process.
+            x = torch.zeros(1, device="cuda")
+            (x @ x).cpu()
+            log.info("GPU warmup: CUDA DLLs loaded for faster-whisper")
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"GPU DLL warmup failed ({e}); STT may fall back")
+
+
 def _whisper_model():
     """Lazy-load the Whisper model (heavy, only load once)."""
     global _model
@@ -75,6 +93,7 @@ def _whisper_model():
         return _model
 
     try:
+        _warm_cuda_dlls()
         from faster_whisper import WhisperModel
 
         log.info(
@@ -401,9 +420,22 @@ def is_loaded() -> bool:
     return _model is not None
 
 
+# One preload at a time: the desktop schedules STT warm-up from BOTH
+# prewarm.py and boot_companion's standalone fallback. Two concurrent
+# loads mean double VRAM, GPU contention, and the slower thread
+# overwriting the other's model cache. The loser waits here and returns.
+_preload_lock = threading.Lock()
+
+
 def preload() -> None:
     """Preload the active engine's model at startup (blocking; call in a thread)."""
+    if not _preload_lock.acquire(blocking=False):
+        log.info("STT preload already in progress; skipping duplicate load")
+        with _preload_lock:  # wait for the in-flight load to settle
+            return
     try:
+        if is_loaded():
+            return
         if _engine() == "moonshine":
             lang = _resolved_language(None)
             if lang:
@@ -412,6 +444,8 @@ def preload() -> None:
         _whisper_model()
     except Exception as e:
         log.error(f"STT preload failed: {e}")
+    finally:
+        _preload_lock.release()
 
 
 def unload() -> None:

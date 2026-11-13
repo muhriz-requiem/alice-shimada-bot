@@ -83,3 +83,32 @@ input_text.txt
 japanese_test_input*.txt
 translate_test.txt
 old_section*.txt
+
+# --- Local additions (bring the personal workspace up to publishable state) ---
+# Pre-rewrite reference code: never published
+_legacy/
+# Original MMD model source + textures (character IP; weights/assets policy)
+assets/models/
+*.pmx
+*.vrm
+*.glb
+# Tray icon assets (assets/alice.ico / alice.png) stay tracked.
+# Owner's captured voice clips + hand-corrected transcripts (privacy)
+stt_eval/clips/
+stt_eval/refs.csv
+
+# --- Sync fixes (blanket `data/` above also matches character/data/ and
+#     social/data/) ---
+# Persona lore files are publishable fan-project content; re-include them.
+# social/data/identities.json (real Discord IDs) intentionally STAYS ignored.
+!character/data/
+# Vestigial Poetry lockfile: pyproject.toml is setuptools-based and
+# requirements.txt is the canonical dependency list.
+poetry.lock
+
+# --- Retired overlay-era one-off probes (dead code; kept on disk only) ---
+desktop/tools/alpha_test.py
+desktop/tools/composition_bench.py
+desktop/tools/overlay_cycle_test.py
+desktop/tools/probe_live_overlay.py
+desktop/tools/verify_live_overlay.py

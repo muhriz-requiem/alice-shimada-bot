@@ -120,6 +120,54 @@ def normalize_ellipsis(text: str) -> str:
     return text
 
 
+def find_hard_cut(text: str) -> int | None:
+    """
+    Earliest index where a raw-completion artifact begins (<|special|>
+    token or a stray URL), or None when the text looks clean.
+
+    The streaming voice reader runs this on a rolling window of raw
+    deltas so it can stop speaking BEFORE the artifact region reaches
+    a sentence boundary and gets synthesized; clean_response() uses it
+    as the same hard cut for finished replies.
+    """
+    if not text:
+        return None
+    earliest: int | None = None
+    for pattern in _HARD_CUT_PATTERNS:
+        match = pattern.search(text)
+        if match and (earliest is None or match.start() < earliest):
+            earliest = match.start()
+    return earliest
+
+
+def clean_stream_sentence(text: str, character_name: str = "") -> str:
+    """
+    Per-sentence cleaning for the streaming voice path.
+
+    clean_response() runs on a finished reply, but the live voice path
+    synthesizes sentences while the model is still generating, so the
+    same cleaning is applied per completed sentence instead: a leak
+    phrase drops the whole sentence ("" -- never spoken), and the
+    text-level normalizers (collapse repeats, strip stammer, normalize
+    ellipsis) run exactly like the batch path.
+    """
+    if not text or not text.strip():
+        return ""
+    cleaned = text.strip()
+
+    lowered = cleaned.lower()
+    markers = list(_LEAK_PHRASES)
+    if character_name:
+        markers.append(f"we are {character_name.lower()}")
+    if any(marker in lowered for marker in markers):
+        return ""
+
+    cleaned = collapse_repeats(cleaned)
+    cleaned = strip_stammer(cleaned)
+    cleaned = normalize_ellipsis(cleaned)
+    return cleaned
+
+
 def clean_response(text: str, character_name: str = "") -> str:
     """
     Strips whitespace, hard-cuts anything after a leaked special token
@@ -133,13 +181,8 @@ def clean_response(text: str, character_name: str = "") -> str:
 
     text = text.strip()
 
-    earliest_cut = len(text)
-    for pattern in _HARD_CUT_PATTERNS:
-        match = pattern.search(text)
-        if match:
-            earliest_cut = min(earliest_cut, match.start())
-    text = text[:earliest_cut].strip()
-
+    earliest_cut = find_hard_cut(text)
+    text = text[:earliest_cut].strip() if earliest_cut is not None else text
     if not text:
         return FALLBACK_REPLY
 

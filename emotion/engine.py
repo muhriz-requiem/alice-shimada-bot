@@ -5,7 +5,7 @@ Tracks a lightweight emotional state per conversation and derives a
 style modifier + a discrete "emotion" label from it (used for GIF
 selection). Ported from the original emotion_engine.py essentially
 unchanged -- the logic itself was solid -- with one generalization:
-the original hardcoded a check for the literal words "the maintainer"/"father"
+the original hardcoded a check for the literal word "father"
 to boost trust/comfort. That's now driven by `identity_keywords`
 passed into update(), which come from the active character's data file,
 so the emotion engine itself stays character-agnostic.

@@ -8,7 +8,6 @@ detecting speech completion via sample-based VAD.
 
 from __future__ import annotations
 
-import asyncio
 import collections
 import time
 from typing import Optional, Callable
@@ -33,6 +32,12 @@ class AudioBuffer:
         self._total_samples = 0
         self._last_write = time.time()
         self._first_write = 0.0
+        # Monotonically increasing count of add() calls since creation.
+        # Never reset by clear(): a predictive STT snapshot taken from
+        # this buffer is fresh only if the revision is unchanged when
+        # the utterance completes. Resetting it here would make a stale
+        # match indistinguishable from a fresh one after wraparound.
+        self.revision = 0
 
     def add(self, pcm_data: np.ndarray) -> None:
         """Add PCM float32 samples to the buffer."""
@@ -40,6 +45,7 @@ class AudioBuffer:
         if self._first_write == 0:
             self._first_write = now
 
+        self.revision += 1
         self._buffer.append(pcm_data)
         self._total_samples += len(pcm_data)
         self._last_write = now
@@ -64,6 +70,20 @@ class AudioBuffer:
         """Get current buffer duration in seconds."""
         return self._total_samples / self.sample_rate
 
+    def get_snapshot(self) -> tuple[Optional[np.ndarray], int]:
+        """Copy the buffered audio without clearing the buffer.
+
+        Used by predictive STT: the decode runs on this frozen copy while
+        live speech keeps appending. Returns (audio, revision); revision
+        is the caller's freshness token -- a later get_audio()+stage must
+        compare it against the buffer's current revision before trusting
+        the decode result.
+        """
+        return (
+            np.concatenate(self._buffer) if self._buffer else None,
+            self.revision,
+        )
+
     @property
     def silence_duration(self) -> float:
         """Time since last audio was written."""
@@ -79,6 +99,7 @@ class AudioBuffer:
         self._buffer.clear()
         self._total_samples = 0
         self._first_write = 0.0
+        self._last_write = 0.0
 
 
 class AliceVoiceSink(voice_recv.AudioSink):
@@ -192,16 +213,25 @@ class AliceVoiceSink(voice_recv.AudioSink):
                 log.info("VAD silence #%d user=%s (total pkts=%d)", st["total"], user_id, st["total"])
             self._speaking.discard(user_id)
 
-    def check_speech_complete(self, user_id: int) -> bool:
+    def check_speech_complete(self, user_id: int, silence_threshold: float | None = None) -> bool:
         """
         Check if a user has stopped speaking.
         Uses Silero VAD for accurate speech completion detection.
         Returns True if speech is complete and ready for processing.
+
+        silence_threshold overrides config.VOICE_SILENCE_THRESHOLD for
+        this call -- the live-mode monitor passes a shorter threshold
+        for private calls (adaptive turn-end) while shared calls keep
+        the conservative default.
         """
         if user_id not in self.buffers:
             return False
 
         buf = self.buffers[user_id]
+        threshold = (
+            self._silence_threshold if silence_threshold is None
+            else silence_threshold
+        )
 
         # Check if we have any audio
         if buf.get_duration() < self._min_speech:
@@ -210,11 +240,11 @@ class AliceVoiceSink(voice_recv.AudioSink):
         # Check VAD state — speech complete when silence exceeds threshold
         vad = self._vads.get(user_id)
         if vad and not vad.is_speaking:
-            if vad.silence_duration >= self._silence_threshold:
+            if vad.silence_duration >= threshold:
                 return True
 
         # Fallback: buffer-based silence detection
-        if buf.silence_duration >= self._silence_threshold:
+        if buf.silence_duration >= threshold:
             return True
 
         # Check if we've hit max duration
@@ -223,6 +253,43 @@ class AliceVoiceSink(voice_recv.AudioSink):
 
         return False
 
+    def observation(self, user_id: int) -> Optional[dict]:
+        """Live-mode predictive STT candidate check.
+
+        Returns {silence_duration, buffer_duration, revision, min_speech} for a
+        user with buffered speech, or None if there is no buffer. Called by the
+        pipeline's monitor loop to decide whether to start a predictive decode
+        snapshot.
+        """
+        buf = self.buffers.get(user_id)
+        if buf is None or buf.get_duration() < self._min_speech:
+            return None
+        vad = self._vads.get(user_id)
+        silence = (
+            vad.silence_duration if vad and not vad.is_speaking
+            else buf.silence_duration
+        )
+        return {
+            "silence_duration": silence,
+            "buffer_duration": buf.get_duration(),
+            "revision": buf.revision,
+        }
+
+    def snapshot_audio(self, user_id: int) -> Optional[tuple[np.ndarray, int]]:
+        """Buffer copy for a predictive decode: (audio, revision)."""
+        buf = self.buffers.get(user_id)
+        if buf is None:
+            return None
+        audio, revision = buf.get_snapshot()
+        if audio is None:
+            return None
+        return audio, revision
+
+    def get_revision(self, user_id: int) -> Optional[int]:
+        """Current buffer revision for a user (None without a buffer)."""
+        buf = self.buffers.get(user_id)
+        return buf.revision if buf else None
+
     def get_audio(self, user_id: int) -> Optional[np.ndarray]:
         """Get buffered audio for a user and clear the buffer."""
         if user_id not in self.buffers:
@@ -230,10 +297,11 @@ class AliceVoiceSink(voice_recv.AudioSink):
         return self.buffers[user_id].get_and_clear()
 
     def clear_user(self, user_id: int) -> None:
-        """Clear buffer for a specific user."""
+        """Clear buffer for a specific user and remove from buffers dict."""
         self._speaking.discard(user_id)
         if user_id in self.buffers:
             self.buffers[user_id].clear()
+            del self.buffers[user_id]
         if user_id in self._vads:
             self._vads[user_id].reset()
 

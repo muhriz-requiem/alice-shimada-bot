@@ -57,6 +57,14 @@ def _get_redis() -> redis.Redis:
     if _REDIS_CLIENT is None:
         host = getattr(config, "REDIS_HOST", "localhost")
         port = getattr(config, "REDIS_PORT", 6379)
+        if not host or not str(host).strip():
+            # Blank REDIS_HOST = Redis deliberately off (desktop single
+            # instance doesn't scale horizontally). Skip the probe and the
+            # per-boot "connection failed" noise; the in-memory fallback in
+            # every caller already handles a raise from here, same as a
+            # genuine connect failure does.
+            log.info("REDIS_HOST not set - shared state disabled (in-memory only)")
+            raise redis.ConnectionError("REDIS_HOST not configured")
         try:
             _preflight(host, port)
         except OSError as e:

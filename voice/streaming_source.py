@@ -8,10 +8,8 @@ while remaining sentences are still being synthesized.
 
 from __future__ import annotations
 
-import asyncio
 import collections
 import io
-import struct
 import threading
 import time
 from typing import Optional
@@ -54,6 +52,13 @@ class StreamingAudioSource(discord.AudioSource):
         self._bytes_played: int = 0
         self._silence_frames_sent: int = 0
         self._max_silence_frames = 50  # ~1 second of silence before stopping
+        # Latency instrumentation: when this source was created and when
+        # the first real PCM chunk landed (the streaming-TTS task calls
+        # add_pcm as soon as the first sentence is synthesized). The
+        # pipeline computes TTFA as first_pcm_at minus its own
+        # speech-complete timestamp.
+        self._created_at = time.monotonic()
+        self._first_pcm_at: float = 0.0
 
     def is_opus(self) -> bool:
         """We send raw PCM, not Opus (discord.AudioSource API)."""
@@ -93,6 +98,10 @@ class StreamingAudioSource(discord.AudioSource):
         """
         if len(audio) == 0:
             return
+
+        # Stamp the first real PCM arrival once (TTFA instrumentation).
+        if self._first_pcm_at == 0.0:
+            self._first_pcm_at = time.monotonic()
 
         # Resample to 48kHz if needed
         if source_sr != SAMPLE_RATE:
@@ -153,9 +162,17 @@ class StreamingAudioSource(discord.AudioSource):
 
     @property
     def time_to_first_frame(self) -> float:
+        """Seconds from source creation until the first PCM frame played
+        (0.0 until playback actually started)."""
         if self._started_at == 0:
             return 0.0
-        return self._started_at - self._created_at if hasattr(self, '_created_at') else 0.0
+        return self._started_at - self._created_at
+
+    @property
+    def first_pcm_at(self) -> float:
+        """time.monotonic() timestamp when the first PCM chunk arrived,
+        or 0.0 while no audio has been synthesized yet."""
+        return self._first_pcm_at
 
     def cleanup(self) -> None:
         """Clean up resources."""
@@ -168,7 +185,7 @@ def _wav_bytes_to_float(wav_bytes: bytes) -> np.ndarray:
     """Convert WAV bytes to float32 numpy array."""
     import wave
     with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
-        sr = wf.getframerate()
+        _ = wf.getframerate()  # not used, kept for validation
         channels = wf.getnchannels()
         sampwidth = wf.getsampwidth()
         frames = wf.readframes(wf.getnframes())

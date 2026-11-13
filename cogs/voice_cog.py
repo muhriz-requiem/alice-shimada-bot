@@ -9,8 +9,6 @@ using discord-ext-voice-recv for proper audio reception.
 from __future__ import annotations
 
 import asyncio
-import time
-from typing import Optional
 
 import discord
 from discord import app_commands
@@ -222,6 +220,40 @@ class VoiceCog(commands.Cog, name="Voice"):
                     ),
                     inline=True,
                 )
+
+                # Live-mode latency panel (VOICE_LIVE_MODE build)
+                try:
+                    from metrics import voice_stats_snapshot
+
+                    live = stats.get("live", {})
+                    snap = voice_stats_snapshot()
+                    ack = live.get("ack_bank", {})
+                    ack_count = sum(ack.get("acks", {}).values())
+                    stage_lines = [
+                        f"{name}: {val:.2f}s"
+                        for name, val in live.get("stage_p50", {}).items()
+                    ]
+                    live_lines = [
+                        f"Latency (TTFA now): {snap.get('ttfa_latest', 0):.2f}s",
+                        f"TTFA p50: {snap.get('ttfa', {}).get('p50', 0):.2f}s",
+                        f"Acks spoken: {live.get('acks_spoken', 0)} (bank {ack_count})",
+                        (
+                            "Predictive STT: "
+                            f"{live.get('predictive', {}).get('cached', 0)} cached, "
+                            f"{live.get('predictive', {}).get('in_flight', 0)} in flight"
+                        ),
+                    ]
+                    if stage_lines:
+                        live_lines.append("Stage p50s: " + ", ".join(stage_lines))
+                    embed.add_field(
+                        name=(
+                            f"Live latency ({'on' if live.get('enabled') else 'off'})"
+                        ),
+                        value="\n".join(live_lines),
+                        inline=False,
+                    )
+                except Exception:
+                    pass
             except Exception:
                 pass
 

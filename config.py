@@ -369,6 +369,7 @@ STT_EVAL_DIR = _get_prefixed("STT_EVAL_DIR", str(BASE_DIR / "stt_eval" / "clips"
 
 # TTS (edge / sovits)
 VOICE_TTS_ENGINE = _get_prefixed("VOICE_TTS_ENGINE", "edge")  # edge/sovits/rvc/piper
+VOICE_LIP_SYNC = _get_prefixed_bool("VOICE_LIP_SYNC", True)  # drive MateEngine mouth from TTS audio
 VOICE_TTS_VOICE = _get_prefixed("VOICE_TTS_VOICE", "ja-JP-NanamiNeural")
 VOICE_TTS_RATE = _get_prefixed("VOICE_TTS_RATE", "-10%")  # SSML rate for character feel
 VOICE_TTS_PITCH = _get_prefixed("VOICE_TTS_PITCH", "+5Hz")
@@ -396,6 +397,16 @@ VOICE_SOVITS_FFMPEG_BINS = _get_prefixed(
     "D:\\ffmpeg-shared\\ffmpeg-9.0.2-full_build-shared\\bin;C:\\ffmpeg\\ffmpeg-9.0.2-essentials_build\\bin",
 )
 VOICE_SOVITS_STARTUP_TIMEOUT = _get_prefixed_float("VOICE_SOVITS_STARTUP_TIMEOUT", 150.0)
+# Boot progress watchdog: while waiting for the API port, the server's
+# own api_boot.log is watched; when it stops growing for this long the
+# boot is treated as hung, killed, and respawned (each respawn is one
+# attempt inside the same startup budget, up to VOICE_SOVITS_BOOT_ATTEMPTS).
+# 2026-10-25 overnight run: the first boot made no progress for the whole
+# 420s budget while a kill+retry 31s later was up in 35s. 0 disables.
+VOICE_SOVITS_BOOT_STALL_TIMEOUT = _get_prefixed_float(
+    "VOICE_SOVITS_BOOT_STALL_TIMEOUT", 180.0
+)
+VOICE_SOVITS_BOOT_ATTEMPTS = _get_prefixed_int("VOICE_SOVITS_BOOT_ATTEMPTS", 2)
 
 # RVC (Voice Conversion) - Optional
 VOICE_RVC_ENABLED = _get_prefixed_bool("VOICE_RVC_ENABLED", False)
@@ -433,6 +444,12 @@ VOICE_LULL_JOIN_PROBABILITY = _get_prefixed_float("VOICE_LULL_JOIN_PROBABILITY",
 VOICE_MENTION_KEYWORDS = _get_prefixed("VOICE_MENTION_KEYWORDS", "alice,アリス").split(",")  # Keywords that trigger response
 VOICE_CONTEXT_WINDOW = _get_prefixed_int("VOICE_CONTEXT_WINDOW", 10)  # Last N utterances to track
 VOICE_OWNER_PRIORITY = _get_prefixed_bool("VOICE_OWNER_PRIORITY", True)  # Always respond to owner
+# Shared-call governor: when another human is in the voice channel, most
+# speech is side conversation ("you're not that sweet" said to a friend),
+# not a prompt for Alice. In smart mode she then only speaks when her name
+# comes up; owner priority unaddressed speech applies only in a call with
+# just her and one user. Barge-ins (interrupting her mid-reply) still work.
+VOICE_SHARED_CALL_GOVERNOR = _get_prefixed_bool("VOICE_SHARED_CALL_GOVERNOR", True)
 VOICE_BACKCHANNEL_ENABLED = _get_prefixed_bool("VOICE_BACKCHANNEL_ENABLED", True)  # "mm", "uh-huh" acknowledgments
 VOICE_BARGE_IN_ENABLED = _get_prefixed_bool("VOICE_BARGE_IN_ENABLED", True)  # Allow user to interrupt Alice
 VOICE_RESPONSE_LANGUAGE = _get_prefixed("VOICE_RESPONSE_LANGUAGE", "auto")  # auto/en/ja — forces Alice to respond in this language
@@ -466,6 +483,172 @@ if VOICE_DIARIZE_MODE not in ("none", "detect", "address"):
 # Completion tokens still count against Groq's TPM budget, so this
 # doubles as rate-limit protection.
 VOICE_MAX_TOKENS = _get_prefixed_int("VOICE_MAX_TOKENS", 400)
+
+
+# =========================================================
+# VOICE LIVE MODE (v2.4)
+# =========================================================
+# "GPT-live" interaction feel while keeping Groq + Alice's own SoVITS
+# timbre. Master switch -- everything below is inactive when this is
+# False, and the bot behaves exactly like v2.3 then.
+#   1. Banked backchannels + instant "Hm?" address-ack (prefetched, so
+#      the acknowledgment plays within ~100ms of the decision).
+#   2. Predictive STT: a decode of the utterance snapshot starts as soon
+#      as silence begins, overlapping the silence-wait window.
+#   3. Adaptive turn-end: a shorter silence threshold in private calls
+#      (shared calls keep the conservative VOICE_SILENCE_THRESHOLD).
+#   4. Groq streaming + GPT-SoVITS streaming synthesis (Phase 2) -- the
+#      first sentence starts synthesizing before the full reply exists.
+VOICE_LIVE_MODE = _get_prefixed_bool("VOICE_LIVE_MODE", False)
+
+# Private-call turn-end threshold (only Alice + the speaker present).
+# 0.8s feels like a command system; 0.5s feels like a conversation.
+# Shared calls always use VOICE_SILENCE_THRESHOLD unchanged.
+VOICE_SILENCE_THRESHOLD_PRIVATE = _get_prefixed_float(
+    "VOICE_SILENCE_THRESHOLD_PRIVATE", 0.5
+)
+
+# Predictive STT: start a background decode when VAD silence has run
+# this long and the buffer has real speech. The decode overlaps the
+# remaining silence-wait instead of starting after it. Wait is the
+# longest _process_speech will stall at the completion gate for an
+# in-flight predictive decode before falling back to a fresh decode.
+VOICE_STT_PREDICTIVE_START = _get_prefixed_float(
+    "VOICE_STT_PREDICTIVE_START", 0.3
+)
+VOICE_STT_PREDICTIVE_WAIT = _get_prefixed_float(
+    "VOICE_STT_PREDICTIVE_WAIT", 0.35
+)
+
+# Address-ack: play a brief banked "Hm?" on a direct address in a
+# private call when the predicted reply path is slower than this many
+# seconds (estimated from measured stage timings). Never fires the
+# number of seconds < min delay, and never fires when the actual reply
+# is already playing.
+VOICE_ACK_ENABLED = _get_prefixed_bool("VOICE_ACK_ENABLED", True)
+VOICE_ACK_MIN_DELAY = _get_prefixed_float("VOICE_ACK_MIN_DELAY", 1.5)
+VOICE_ACK_COOLDOWN = _get_prefixed_float("VOICE_ACK_COOLDOWN", 15.0)  # seconds between acks
+
+# How many acknowledgment phrases are prefetched per language at TTS
+# readiness (8-16 is the sensible band; 0 disables the bank and keeps
+# the old synthesize-on-demand backchannels).
+VOICE_BACKCHANNEL_BANK_SIZE = _get_prefixed_int(
+    "VOICE_BACKCHANNEL_BANK_SIZE", 8
+)
+
+# GPT-SoVITS streaming synthesis for the FIRST sentence of a voice reply.
+# api_v2 streaming_mode semantics (api_v2.py tts_handle):
+#   1 = return_fragment  — old fragment mode: best join quality, SLOWEST
+#                          first audio (the AR runs ahead in big fragments)
+#   2 = chunked streaming — dynamic chunks with the anti-hallucination
+#                          mute matrix kept (recommended live mode)
+#   3 = chunked streaming — fixed-length chunks, fastest first audio, but
+#                          mute_emb_sim_matrix is disabled (repeat risk)
+# First-chunk latency measured on this box (GTX 1650 Ti): mode1 ~1.4s p50,
+# mode2/3 typically 2-4x sooner; every sentence after the first still uses
+# the high-quality batch path, so only the streamed opener is affected.
+VOICE_SOVITS_STREAMING = _get_prefixed_bool("VOICE_SOVITS_STREAMING", False)
+VOICE_SOVITS_STREAM_MODE = _get_prefixed_int("VOICE_SOVITS_STREAM_MODE", 1)
+if VOICE_SOVITS_STREAM_MODE not in (1, 2, 3):
+    VOICE_SOVITS_STREAM_MODE = 1
+
+# Groq streaming completions for voice replies: the reply text starts
+# accumulating (and the first sentence TTS kicks off) as soon as the
+# model emits a full sentence, instead of after the whole completion.
+VOICE_STREAM_GROQ = _get_prefixed_bool("VOICE_STREAM_GROQ", True)
+
+# Optional hosted STT: transcribe utterances through Groq's hosted
+# Whisper instead of the local faster-whisper/moonshine model. Frees
+# VRAM locally, but sends live microphone audio off-machine -- so this
+# stays OFF unless explicitly enabled. Requires AI_BACKEND=groq.
+VOICE_STT_HOSTED = _get_prefixed_bool("VOICE_STT_HOSTED", False)
+VOICE_STT_HOSTED_MODEL = _get_prefixed("VOICE_STT_HOSTED_MODEL", "whisper-large-v3-turbo")
+
+# Hard budget for one local STT decode (predictive + turn-end gate). A
+# wedged decode -- e.g. CUDA hung under VRAM pressure -- used to hold the
+# per-guild STT lock forever and silently stall every later turn. On
+# timeout the awaiting task is cancelled (releasing the lock) and the
+# turn is dropped; the abandoned thread's result is discarded.
+VOICE_STT_DECODE_TIMEOUT = _get_prefixed_float("VOICE_STT_DECODE_TIMEOUT", 60.0)
+
+# Software AGC for the desktop mic: normalizes faint capture devices
+# (cheap USB dongles, far-field arrays) to a level Silero VAD and
+# Whisper can actually work with. Fast attack / slow release; the gain
+# never exceeds VOICE_MIC_AGC_MAX_GAIN and never attenuates.
+VOICE_MIC_AGC = _get_prefixed_bool("VOICE_MIC_AGC", False)
+VOICE_MIC_AGC_TARGET = _get_prefixed_float("VOICE_MIC_AGC_TARGET", 0.12)
+VOICE_MIC_AGC_MAX_GAIN = _get_prefixed_float("VOICE_MIC_AGC_MAX_GAIN", 32.0)
+
+# WebRTC Audio Processing Module (aec-audio-processing package): the
+# same DSP family Discord's client applies -- acoustic echo cancellation
+# against Alice's own playback + noise suppression on the mic stream.
+# When active, the desktop speakers echo guard is bypassed (the AEC
+# residual replaces it). Optional dependency; when missing the raw path
+# (echo gate + AGC) runs unchanged.
+VOICE_MIC_APM = _get_prefixed_bool("VOICE_MIC_APM", False)
+VOICE_APM_DELAY_MS = _get_prefixed_int("VOICE_APM_DELAY_MS", 60)
+
+# Desktop playback smoothing (SdOutput pre-roll): hold the device start
+# until this much audio is buffered, so streamed TTS chunk jitter
+# doesn't fragment the first sentence. Costs the same amount of
+# time-to-first-audio. 0 = play immediately (old behavior).
+VOICE_TTS_PREROLL_MS = _get_prefixed_int("VOICE_TTS_PREROLL_MS", 250)
+
+
+# =========================================================
+# DESKTOP COMPANION (v2.5)
+# =========================================================
+# Mic echo gate: with SPEAKERS, Alice's own TTS leaks back into the
+# microphone (she would hear herself, so the desktop mic feed drops
+# blocks while she talks -- a sustained ~0.4s SHOUT is the only way
+# through, which powers barge-in). With HEADPHONES the audio never
+# reaches the mic, so gating is unnecessary and disabling it unlocks
+# natural mid-sentence interruption at normal speaking volume.
+VOICE_DESKTOP_ECHO_GATE = _get_prefixed_bool("VOICE_DESKTOP_ECHO_GATE", True)
+
+
+# =========================================================
+# SCREEN GLANCE ("Alice looks at my screen")
+# =========================================================
+# Everything is OFF by default; the tray-permission toggle
+# ("Screen glances allowed") must also be ON before any capture.
+# Screenshots live in RAM only and are discarded after the request.
+SCREEN_LOOK_ENABLED = _get_prefixed_bool("SCREEN_LOOK_ENABLED", False)
+# Model must support images on Groq (qwen/qwen3.8-27b is the current
+# vision model on the free tier; ~850 tokens for a 1280px JPEG).
+SCREEN_LOOK_MODEL = _get_prefixed("SCREEN_LOOK_MODEL", "qwen/qwen3.8-27b")
+# Downscale target width (px) and JPEG quality -- token budget knobs.
+SCREEN_LOOK_MAX_WIDTH = _get_prefixed_int("SCREEN_LOOK_MAX_WIDTH", 1280)
+SCREEN_LOOK_JPEG_QUALITY = _get_prefixed_int("SCREEN_LOOK_JPEG_QUALITY", 70)
+# Which monitor to capture: "primary" or a 0-based index.
+SCREEN_LOOK_MONITOR = _get_prefixed("SCREEN_LOOK_MONITOR", "primary")
+# Case-insensitive substrings; a window whose title contains any of
+# these is never captured (she refuses without sending anything).
+SCREEN_LOOK_DENYLIST = _get_prefixed(
+    "SCREEN_LOOK_DENYLIST",
+    "bank,wallet,password,passwd,login,incognito,private,token,secret",
+).split(",")
+# On-demand cooldown (s) and deixis cooldown (s).
+SCREEN_LOOK_COOLDOWN_S = _get_prefixed_float("SCREEN_LOOK_COOLDOWN_S", 8.0)
+# Ambient glances (idle-time remarks about a CHANGED screen): master
+# switch, min seconds between glances, hourly cap, and the minimum
+# fraction of pixels that must change for the screen to count as new.
+SCREEN_LOOK_AMBIENT = _get_prefixed_bool("SCREEN_LOOK_AMBIENT", False)
+SCREEN_LOOK_AMBIENT_COOLDOWN_S = _get_prefixed_float(
+    "SCREEN_LOOK_AMBIENT_COOLDOWN_S", 180.0
+)
+SCREEN_LOOK_AMBIENT_MAX_PER_HOUR = _get_prefixed_int(
+    "SCREEN_LOOK_AMBIENT_MAX_PER_HOUR", 12
+)
+SCREEN_LOOK_MIN_CHANGE = _get_prefixed_float("SCREEN_LOOK_MIN_CHANGE", 0.04)
+# Store a short note about what she saw in the memory graph (opt-in).
+SCREEN_LOOK_MEMORY = _get_prefixed_bool("SCREEN_LOOK_MEMORY", True)
+# MtBridge expression preset while she comments on the screen
+# (empty = no expression touch).
+SCREEN_LOOK_EXPRESSION = _get_prefixed("SCREEN_LOOK_EXPRESSION", "happy")
+SCREEN_LOOK_EXPRESSION_WEIGHT = _get_prefixed_float(
+    "SCREEN_LOOK_EXPRESSION_WEIGHT", 0.5
+)
 
 
 # =========================================================

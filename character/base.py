@@ -31,7 +31,7 @@ class Character:
 
     # Keywords that make the emotion engine treat a message as
     # touching on the character's core identity/relationships (e.g.
-    # Alice's "the maintainer"/"father" triggers). Kept as data instead of a
+    # Alice's "father"/"Boko" triggers). Kept as data instead of a
     # hardcoded string so a different character can define its own.
     identity_keywords: list[str] = field(default_factory=list)
 

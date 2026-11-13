@@ -144,6 +144,15 @@ class VoiceStateManager:
             if hasattr(vc, 'is_connected') and vc.is_connected()
         ]
 
+    def any_discord_voice_active(self) -> bool:
+        """True when a REAL Discord voice session is connected.
+
+        Guild 0 is the desktop companion's own pseudo-guild; a Discord
+        call registers under its real guild id. While one is active the
+        desktop mic feed stands down (no second Alice over the call).
+        """
+        return any(gid != 0 for gid in self.get_connected_guilds())
+
     def update_spoke(self, guild_id: int) -> None:
         """Update the last-spoke timestamp for a session."""
         session = self._sessions.get(guild_id)

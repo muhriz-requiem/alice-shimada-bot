@@ -163,6 +163,34 @@ def _try_dave_decrypt(decoder, packet, stats: dict) -> None:
             )
 
     except Exception as e:
+        # Mid-transition sources can send unencrypted frames while the
+        # session policy has passthrough disabled. The payload is then
+        # an unencrypted DAVE frame: one header byte (0x00) + plain
+        # opus. Strip the marker so libopus decodes the packet instead
+        # of failing with a corrupted-stream error.
+        if "UnencryptedWhenPassthroughDisabled" in str(e):
+            frame = packet.decrypted_data
+            if frame and frame[0] == 0x00:
+                packet.decrypted_data = frame[1:]
+                stats["plain"] = stats.get("plain", 0) + 1
+                p = stats["plain"]
+                if p <= 3 or p % 100 == 0:
+                    log.info(
+                        "DAVE plain frame decoded #%d (ssrc=%s, %d bytes)",
+                        p, decoder.ssrc, len(packet.decrypted_data),
+                    )
+                return
+            # Not the expected 0x00 marker. Log the leading bytes (once
+            # per burst) so a divergent frame layout can be identified
+            # and added here without touching opus-decodable data.
+            stats["unrec"] = stats.get("unrec", 0) + 1
+            if stats["unrec"] <= 5:
+                log.info(
+                    "DAVE plain frame not recovered (ssrc=%s, first bytes=%s)",
+                    decoder.ssrc,
+                    frame[:4].hex() if frame else "<empty>",
+                )
+            return
         stats["failed"] += 1
         if stats["failed"] <= 5:
             log.info(

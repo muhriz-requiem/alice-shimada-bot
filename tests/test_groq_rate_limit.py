@@ -224,7 +224,14 @@ def _make_pipeline(reply: str, block: asyncio.Event | None = None):
     from voice.pipeline import VoicePipeline
 
     bot = SimpleNamespace(
-        character=object(),
+        character=SimpleNamespace(
+            display_name="Alice Shimada",
+            full_examples=[],
+            core_facts={"boko_love": "Boko the bear is her most treasured possession."},
+            relationship_tone=lambda key: {
+                "tone": "neutral", "trust": 0.5, "warmth": 0.5,
+            },
+        ),
         ai_client=FakeAIClient(reply, block),
         user=SimpleNamespace(id=999888777),
     )

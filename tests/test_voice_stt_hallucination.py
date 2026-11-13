@@ -88,3 +88,14 @@ class TestIsSttHallucination:
     def test_empty_text_is_rejected(self):
         assert pipeline._is_stt_hallucination("", 2.0)
         assert pipeline._is_stt_hallucination("   ", 2.0)
+
+    def test_record_stt_filtered_metric(self):
+        from metrics import record_voice_stt_filtered
+        from metrics.collector import voice_stt_filtered_total
+
+        before = voice_stt_filtered_total.labels(reason="single_word")._value.get()
+        record_voice_stt_filtered("single_word")
+        assert (
+            voice_stt_filtered_total.labels(reason="single_word")._value.get()
+            == before + 1
+        )

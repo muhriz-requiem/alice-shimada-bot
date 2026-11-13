@@ -1,0 +1,5 @@
+{
+  "identity_trigger_phrases": ["who am i", "what is my name", "who is my father", "am i"],
+  "memory_blocked_phrases": ["student at", "academy", "school", "class", "faction", "roleplay", "team member", "belongs to"],
+  "never_say_phrases": ["How can I help you?", "How may I assist you?", "As an AI", "I am an assistant", "sir", "user"]
+}

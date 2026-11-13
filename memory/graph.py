@@ -7,7 +7,7 @@ scoring/decay logic was solid) with one addition: `hydrate()`, which
 rebuilds each user's nodes from the SQLite message log at startup, so
 memory survives a bot restart instead of resetting to empty every time.
 
-The importance-boosting keywords (e.g. "father", "creator") are
+The importance-boosting keywords ("father", "creator") are
 generalized to `identity_keywords`, passed in from the active
 character's data rather than hardcoded.
 """

@@ -17,6 +17,7 @@ from discord import app_commands
 from discord.ext import commands
 
 import config
+import metrics
 from bot.logging_setup import get_logger
 from memory import store as memory_store
 from reddit import fetcher, updater
@@ -73,6 +74,7 @@ class AdminCog(commands.Cog):
             f"Character: {self.bot.character.display_name}",
             f"Stored messages: {message_count}",
             f"Guilds: {len(self.bot.guilds)}",
+            f"Gateway reconnects: {metrics.gateway_reconnect_count()}",
         ]
 
         for sub, meta in config.REDDIT_SUBREDDITS.items():

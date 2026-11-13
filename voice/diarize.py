@@ -7,6 +7,7 @@ when in multi-speaker audio.
 
 from __future__ import annotations
 
+import threading
 from typing import Optional
 
 import numpy as np
@@ -17,13 +18,30 @@ import config
 log = get_logger("voice.diarize")
 
 _pipeline = None
+_load_failed = False
+_load_lock = threading.Lock()
 
 
 def _get_pipeline():
-    """Lazy-load the pyannote diarization pipeline."""
-    global _pipeline
+    """Lazy-load the pyannote diarization pipeline.
+
+    Guarded by a module lock: several utterances can call diarize()
+    concurrently, and two simultaneous loads double the VRAM spike.
+    """
+    global _pipeline, _load_failed
+    with _load_lock:
+        return _load_pipeline()
+
+
+def _load_pipeline():
+    global _pipeline, _load_failed
     if _pipeline is not None:
         return _pipeline
+    if _load_failed:
+        # A previous load attempt failed. Returning None lets diarize()
+        # fall back to single-speaker output instead of retrying (and
+        # re-spamming the log) on every incoming clip.
+        return None
 
     if not config.VOICE_DIARIZATION:
         log.debug("Diarization disabled in config")
@@ -37,20 +55,30 @@ def _get_pipeline():
         from pyannote.audio import Pipeline
 
         log.info("Loading pyannote diarization pipeline...")
-        _pipeline = Pipeline.from_pretrained(
-            "pyannote/speaker-diarization-3.1",
-            use_auth_token=config.VOICE_HF_TOKEN,
-        )
+        try:
+            # pyannote.audio >= 4.0 renamed use_auth_token -> token.
+            _pipeline = Pipeline.from_pretrained(
+                "pyannote/speaker-diarization-3.1",
+                token=config.VOICE_HF_TOKEN,
+            )
+        except TypeError:
+            # pyannote.audio < 4.0 only accepts use_auth_token.
+            _pipeline = Pipeline.from_pretrained(
+                "pyannote/speaker-diarization-3.1",
+                use_auth_token=config.VOICE_HF_TOKEN,
+            )
 
         import torch
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         _pipeline.to(device)
+        _load_failed = False
         log.info(f"Diarization pipeline loaded on {device}")
 
     except Exception as e:
         log.error(f"Failed to load diarization pipeline: {e}")
         _pipeline = None
-        raise
+        _load_failed = True
+        return None
 
     return _pipeline
 
@@ -100,8 +128,13 @@ def diarize(
             num_speakers=num_speakers,
         )
 
+        # pyannote.audio 4.x returns a DiarizeOutput dataclass whose
+        # .speaker_diarization field holds the classic Annotation object.
+        # pyannote.audio 3.x returned the Annotation directly.
+        annotation = getattr(diarization, "speaker_diarization", diarization)
+
         segments = []
-        for turn, _, speaker in diarization.itertracks(yield_label=True):
+        for turn, _, speaker in annotation.itertracks(yield_label=True):
             segments.append({
                 "speaker": speaker,
                 "start": turn.start,
@@ -150,10 +183,27 @@ def is_available() -> bool:
     return _pipeline is not None
 
 
+def warmup() -> None:
+    """Pre-load the diarization pipeline in the background.
+
+    Called at bot startup so the first spoken utterance of a session
+    doesn't pay the ~15s model load inline between transcription and
+    the response decision. Safe to call repeatedly; failures are
+    logged once and degrade to the single-speaker fallback.
+    """
+    if config.VOICE_DIARIZE_MODE == "none" or not config.VOICE_HF_TOKEN:
+        return
+    try:
+        _get_pipeline()
+    except Exception as e:
+        log.warning(f"Diarization warmup failed: {e}")
+
+
 def unload() -> None:
     """Unload the diarization pipeline."""
-    global _pipeline
+    global _pipeline, _load_failed
     _pipeline = None
+    _load_failed = False
     import gc
     gc.collect()
     try:

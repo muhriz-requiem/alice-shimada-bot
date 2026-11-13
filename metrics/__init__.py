@@ -1,17 +1,25 @@
 from metrics.collector import (
+    gateway_reconnect_count,
     init_metrics,
     record_ai_request,
     record_error,
+    record_gateway_reconnect,
     record_gif_sent,
+    record_glance,
     record_message,
     record_rate_limit_wait,
     record_reddit_refresh,
+    record_voice_predictive,
+    record_voice_reply,
+    record_voice_stage,
+    record_voice_stt_filtered,
     set_active_users,
     set_emotion_state,
     set_memory_graph_cap,
     set_memory_graph_size,
     set_reddit_posts,
     set_uptime,
+    voice_stats_snapshot,
 )
 
 __all__ = [
@@ -28,4 +36,12 @@ __all__ = [
     "record_rate_limit_wait",
     "set_active_users",
     "set_uptime",
+    "gateway_reconnect_count",
+    "record_gateway_reconnect",
+    "record_voice_stage",
+    "record_voice_reply",
+    "record_voice_predictive",
+    "record_voice_stt_filtered",
+    "record_glance",
+    "voice_stats_snapshot",
 ]
