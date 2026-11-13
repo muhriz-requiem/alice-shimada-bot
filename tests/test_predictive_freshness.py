@@ -6,12 +6,10 @@ the AudioBuffer revision counter used by predictive STT.
 
 from __future__ import annotations
 
-
 import numpy as np
 
 import config
-from voice.sink import AudioBuffer, AliceVoiceSink
-
+from voice.sink import AliceVoiceSink, AudioBuffer
 
 GUILD = 1
 USER = 7
@@ -50,7 +48,7 @@ class TestAdaptiveThreshold:
         sink = _sink_with_buffer(duration=1.0, silence=0.6)
         assert (
             sink.check_speech_complete(USER, silence_threshold=None)
-            == (0.6 >= config.VOICE_SILENCE_THRESHOLD)
+            == (config.VOICE_SILENCE_THRESHOLD <= 0.6)
         )
 
     def test_short_speech_always_rejected(self):

@@ -26,10 +26,11 @@ identically to the Discord path.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import queue
 import threading
 import time
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import numpy as np
 
@@ -56,7 +57,7 @@ def _client_exception(msg: str) -> Exception:
     return ClientException(msg)
 
 
-def _stereo_to_mono(frame: bytes) -> Optional[np.ndarray]:
+def _stereo_to_mono(frame: bytes) -> np.ndarray | None:
     """Convert one 20ms interleaved s16le stereo frame to mono float32.
 
     Returns None for empty/odd-sized frames (treated as EOF by the
@@ -84,13 +85,13 @@ class SdOutput:
 
     def __init__(
         self,
-        rms_callback: Optional[Callable[[float], None]] = None,
-        device: Optional[int] = None,
-        far_end_callback: Optional[Callable[[np.ndarray], None]] = None,
+        rms_callback: Callable[[float], None] | None = None,
+        device: int | None = None,
+        far_end_callback: Callable[[np.ndarray], None] | None = None,
         preroll_ms: int = 250,
     ) -> None:
         self.playing = True
-        self._q: "queue.SimpleQueue" = queue.SimpleQueue()
+        self._q: queue.SimpleQueue = queue.SimpleQueue()
         self._buf = np.zeros(0, dtype=np.float32)
         self._end_seen = False
         self._drained = threading.Event()
@@ -154,19 +155,15 @@ class SdOutput:
                 rms = float(np.sqrt(np.mean(buf[:n] ** 2)))
                 # Schedule on the Qt main thread via postEvent or QTimer
                 # We'll use a simple thread-safe queue approach for the callback
-                try:
+                with contextlib.suppress(Exception):
                     self._rms_callback(rms)
-                except Exception:
-                    pass
         if n < frames:
             outdata[n:, 0] = 0
         self._buf = buf[n:]
 
         if self._far_end_callback is not None:
-            try:
+            with contextlib.suppress(Exception):  # AEC reference is best-effort
                 self._far_end_callback(outdata[:frames, 0])
-            except Exception:  # noqa: BLE001 - AEC reference is best-effort
-                pass
 
         if self._end_seen and len(self._buf) == 0:
             self._drained.set()
@@ -188,10 +185,8 @@ class SdOutput:
         """Stop immediately (barge-in): discard queued audio."""
         self._drained.set()
         self._end_seen = True
-        try:
+        with contextlib.suppress(Exception):
             self._stream.abort()
-        except Exception:  # noqa: BLE001
-            pass
 
     def close(self) -> None:
         self.playing = False
@@ -249,14 +244,14 @@ class LocalVoiceClient:
         self,
         guild_id: int = 0,
         channel=None,
-        output_factory: Optional[Callable[[], object]] = None,
-        rms_callback: Optional[Callable[[float], None]] = None,
+        output_factory: Callable[[], object] | None = None,
+        rms_callback: Callable[[float], None] | None = None,
     ) -> None:
         self.guild_id = guild_id
         self.channel = channel
         self._factory = output_factory or (lambda: SdOutput(rms_callback=rms_callback))
         self._out = None
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
 
     # --- discord.VoiceClient surface -----------------------------------
@@ -268,7 +263,7 @@ class LocalVoiceClient:
     def is_playing(self) -> bool:
         return self._out is not None and self._out.playing
 
-    def play(self, source, after: Optional[Callable] = None) -> None:
+    def play(self, source, after: Callable | None = None) -> None:
         """Play a discord.AudioSource-style object to the speakers.
 
         Mirrors VoiceClient.play: raises ClientException if already

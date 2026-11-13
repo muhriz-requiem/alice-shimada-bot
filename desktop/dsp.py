@@ -31,6 +31,7 @@ raw path (echo gate + AGC only). Nothing here raises into the hot path.
 
 from __future__ import annotations
 
+import contextlib
 import queue
 import threading
 
@@ -98,7 +99,7 @@ class MicApm:
         # and blocking the callback misses its deadline -> device
         # underruns (crackling output). Queue instead; a feeder thread
         # drains it on its own time.
-        self._far_q: "queue.SimpleQueue" = queue.SimpleQueue()
+        self._far_q: queue.SimpleQueue = queue.SimpleQueue()
         threading.Thread(
             target=self._far_loop, daemon=True, name="apm-far-feeder"
         ).start()
@@ -110,10 +111,8 @@ class MicApm:
             block = self._far_q.get()
             if block is None:
                 return
-            try:
+            with contextlib.suppress(Exception):  # far feed is best-effort
                 self._feed_far(block)
-            except Exception:  # noqa: BLE001 - far feed is best-effort
-                pass
 
     def process_far(self, mono_f32: np.ndarray) -> None:
         """Queue played-out audio (mono float32 48 kHz) as the far end.
@@ -141,10 +140,8 @@ class MicApm:
             while len(self._far_buf) >= _APM_FRAME // 2:
                 frame = self._far_buf[: _APM_FRAME // 2].tobytes()
                 self._far_buf = self._far_buf[_APM_FRAME // 2:]
-                try:
+                with contextlib.suppress(Exception):  # far feed is best-effort
                     self._apm.process_reverse_stream(frame)
-                except Exception:  # noqa: BLE001 - far feed is best-effort
-                    pass
 
     # --- near end (the mic) --------------------------------------------------
 
@@ -191,7 +188,7 @@ class MicApm:
         return cls._decimate48(samples.astype(np.int16))
 
 
-def from_config(delay_ms: int = 60) -> "MicApm | None":
+def from_config(delay_ms: int = 60) -> MicApm | None:
     """MicApm or None (package missing / init failed) -- never raises."""
     if not _APM_AVAILABLE:
         log.info(

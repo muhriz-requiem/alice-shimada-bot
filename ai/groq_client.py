@@ -393,7 +393,7 @@ class GroqClient(AIClient):
         user_id: str,
         channel_id: str,
         max_tokens: int | None = None,
-    ) -> "ChatStream | None":
+    ) -> ChatStream | None:
         """
         Streaming variant of generate_reply for the live voice path.
 

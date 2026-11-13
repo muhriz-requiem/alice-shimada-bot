@@ -11,10 +11,9 @@ from __future__ import annotations
 import random
 import time
 from enum import Enum
-from typing import Optional
 
-from bot.logging_setup import get_logger
 import config
+from bot.logging_setup import get_logger
 from voice.conversation import ConversationTracker
 from voice.turn_detector import TurnDetector, TurnState
 
@@ -79,7 +78,7 @@ class ResponseDecisionEngine:
         user_id: int,
         text: str,
         is_owner: bool = False,
-        diarize_result: Optional[list[dict]] = None,
+        diarize_result: list[dict] | None = None,
         others_present: bool = False,
     ) -> tuple[ResponseDecision, ResponsePriority]:
         """
@@ -222,7 +221,7 @@ class ResponseDecisionEngine:
 
     def _should_backchannel(
         self, guild_id: int, user_id: int, text: str,
-        diarize_result: Optional[list[dict]] = None,
+        diarize_result: list[dict] | None = None,
     ) -> bool:
         """Determine if a brief acknowledgment is appropriate."""
         if not config.VOICE_BACKCHANNEL_ENABLED:

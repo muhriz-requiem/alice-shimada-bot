@@ -19,12 +19,11 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 
-from bot.logging_setup import get_logger
 import config
+from bot.logging_setup import get_logger
 
 # Models are already cached locally; skip all Hugging Face Hub traffic
 # on load (HF_TOKEN nag, repo-rename 307 redirects, optional-file 404
@@ -50,7 +49,7 @@ def _engine() -> str:
     return (getattr(config, "VOICE_STT_ENGINE", "moonshine") or "moonshine").strip().lower()
 
 
-def _resolved_language(language: Optional[str] = None) -> Optional[str]:
+def _resolved_language(language: str | None = None) -> str | None:
     """
     Resolve the language for this transcription.
 
@@ -154,6 +153,7 @@ def _resample(audio: np.ndarray, sample_rate: int, target_sr: int = 16000) -> np
     if sample_rate == target_sr:
         return audio
     import math
+
     import scipy.signal
     g = math.gcd(int(sample_rate), int(target_sr))
     return scipy.signal.resample_poly(
@@ -232,7 +232,7 @@ def _transcribe_moonshine(
 def transcribe(
     audio: np.ndarray,
     sample_rate: int = 16000,
-    language: Optional[str] = None,
+    language: str | None = None,
 ) -> dict:
     """
     Transcribe audio numpy array to text.
@@ -273,7 +273,7 @@ def transcribe(
 def _transcribe_whisper(
     audio: np.ndarray,
     sample_rate: int,
-    language: Optional[str] = None,
+    language: str | None = None,
 ) -> dict:
     """faster-whisper transcription (auto-detects when language is 'auto')."""
     model = _whisper_model()
@@ -330,11 +330,11 @@ def _transcribe_whisper(
         hotwords=hotwords,
         condition_on_previous_text=False,
         vad_filter=use_vad_filter,
-        vad_parameters=dict(
-            min_speech_duration_ms=250,
-            min_silence_duration_ms=300,
-            speech_pad_ms=100,
-        ) if use_vad_filter else None,
+        vad_parameters={
+            "min_speech_duration_ms": 250,
+            "min_silence_duration_ms": 300,
+            "speech_pad_ms": 100,
+        } if use_vad_filter else None,
     )
 
     segments = []
@@ -365,7 +365,7 @@ def _transcribe_whisper(
 
 def transcribe_file(
     file_path: str | Path,
-    language: Optional[str] = None,
+    language: str | None = None,
 ) -> dict:
     """Transcribe an audio file from disk."""
     lang = _resolved_language(language)

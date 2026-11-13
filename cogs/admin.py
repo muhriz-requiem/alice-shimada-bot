@@ -77,7 +77,7 @@ class AdminCog(commands.Cog):
             f"Gateway reconnects: {metrics.gateway_reconnect_count()}",
         ]
 
-        for sub, meta in config.REDDIT_SUBREDDITS.items():
+        for _sub, meta in config.REDDIT_SUBREDDITS.items():
             count = 0
             if meta["posts_file"].exists():
                 import json

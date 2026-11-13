@@ -196,12 +196,12 @@ def clean_response(text: str, character_name: str = "") -> str:
         if not any(marker in ln.lower() for marker in leak_markers)
     ]
 
-    if not clean_lines:
-        # Every line looked like a leak -- fall back to the original
-        # first line rather than returning nothing.
-        result = lines[0] if lines else FALLBACK_REPLY
-    else:
-        result = "\n".join(clean_lines)
+    # Every line looked like a leak -- fall back to the original first
+    # line rather than returning nothing.
+    result = (
+        (lines[0] if lines else FALLBACK_REPLY) if not clean_lines
+        else "\n".join(clean_lines)
+    )
 
     result = collapse_repeats(result)
     result = strip_stammer(result)

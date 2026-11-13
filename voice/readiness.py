@@ -14,10 +14,9 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Callable
-from typing import Optional
 
-from bot.logging_setup import get_logger
 import config
+from bot.logging_setup import get_logger
 
 log = get_logger("voice.readiness")
 
@@ -31,7 +30,7 @@ _PROBE_RETRIES = 3
 _PROBE_RETRY_DELAY = 3.0
 
 _state = STATE_STARTING
-_task: Optional[asyncio.Task] = None
+_task: asyncio.Task | None = None
 # Optional callbacks (registered via kick(on_ready=...)) that run once
 # a TTS engine is confirmed usable. Used to defer heavy preloads (and
 # the live-mode backchannel bank build) until the GPU isn't fighting
@@ -54,7 +53,7 @@ def is_ready() -> bool:
     return _state in (STATE_READY, STATE_FALLBACK)
 
 
-def kick(on_ready: Optional[Callable[[], None]] = None) -> None:
+def kick(on_ready: Callable[[], None] | None = None) -> None:
     """Start the background readiness loop (idempotent).
 
     on_ready, when given, is queued and runs once as soon as a TTS

@@ -72,7 +72,7 @@ def _healthy(monkeypatch):
 
 
 def test_timeout_error_is_descriptive(_healthy):
-    _FakeSession.raise_on_post = asyncio.TimeoutError()
+    _FakeSession.raise_on_post = TimeoutError()
     with pytest.raises(RuntimeError, match="timed out after"):
         asyncio.run(sovits.generate_async("test"))
 

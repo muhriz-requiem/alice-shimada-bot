@@ -29,7 +29,6 @@ from desktop.local_client import (
 )
 from desktop.mic_input import MicInput
 
-
 # --- helpers ---------------------------------------------------------------
 
 def _stereo_frame(left: int, right: int, n_samples: int = 240) -> bytes:
@@ -179,10 +178,7 @@ def _make_mic(playing: bool | None, barge_rms=0.12, barge_blocks=3,
               apm=None, suppress_fn=None):
     sink = _RecordingSink()
     owner = SimpleNamespace(id=42)
-    if playing is None:
-        playing_fn = lambda: False
-    else:
-        playing_fn = lambda: playing
+    playing_fn = (lambda: False) if playing is None else lambda: playing
 
     class _MicNoStream(MicInput):
         # Skip the real OutputStream (no devices in CI); logic is in _handle_block.

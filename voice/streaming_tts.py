@@ -15,12 +15,11 @@ from __future__ import annotations
 import asyncio
 import re
 import time
-from typing import Optional
 
 import numpy as np
 
-from bot.logging_setup import get_logger
 import config
+from bot.logging_setup import get_logger
 from voice import rvc, tts
 from voice.streaming_source import StreamingAudioSource
 
@@ -180,9 +179,9 @@ class SentenceAccumulator:
 async def stream_response_deltas(
     deltas,
     guild_id: int,
-    source: Optional[StreamingAudioSource] = None,
+    source: StreamingAudioSource | None = None,
     mood: str = "neutral",
-    track: Optional[dict] = None,
+    track: dict | None = None,
 ) -> tuple[StreamingAudioSource, str, bool]:
     """
     Live-mode streaming reply: sentence boundaries detected as the AI's
@@ -224,7 +223,7 @@ async def stream_response_deltas(
         source.mark_done()
         return source, "", True
 
-    queue: asyncio.Queue[Optional[str]] = asyncio.Queue()
+    queue: asyncio.Queue[str | None] = asyncio.Queue()
 
     from ai.postprocess import clean_stream_sentence, find_hard_cut
 
@@ -325,7 +324,7 @@ async def stream_response_deltas(
     settled = True
     try:
         await asyncio.wait_for(first_ready.wait(), timeout=3.0)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         settled = False
         log.warning(
             "Reply stream: no sentence within 3s (tokens still arriving?)"
@@ -337,23 +336,23 @@ async def stream_response_deltas(
 async def stream_response(
     text: str,
     guild_id: int,
-    source: Optional[StreamingAudioSource] = None,
+    source: StreamingAudioSource | None = None,
     mood: str = "neutral",
 ) -> StreamingAudioSource:
     """
     Stream an AI response sentence-by-sentence.
-    
+
     1. Split text into sentences
     2. Start TTS for first sentence immediately
     3. While first plays, start TTS for second sentence
     4. Continue until all sentences are streamed
-    
+
     Args:
         text: AI response text
         guild_id: Guild ID for RVC
         source: Existing source to add to (creates new if None)
         mood: Character mood for TTS
-        
+
     Returns:
         The StreamingAudioSource (for tracking/completion)
     """
@@ -525,9 +524,10 @@ def _publish_lip_sync(
     Neutral: no desktop imports, so voice/ stays headless/Discord-usable.
     """
     try:
-        from voice import lip_sync
         import io
         import wave
+
+        from voice import lip_sync
 
         _dur = 0.0
         try:

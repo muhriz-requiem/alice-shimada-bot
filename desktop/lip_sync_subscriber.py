@@ -8,12 +8,13 @@ Kept out of voice/ so the voice pipeline has no desktop dependency.
 """
 from __future__ import annotations
 
+import contextlib
 import io
 import queue
 import threading
 import time
 import wave
-from typing import Any, Dict, Optional
+from typing import Any
 
 import numpy as np
 
@@ -28,10 +29,9 @@ except Exception:  # noqa: BLE001
 
 
 def _is_japanese(text: str) -> bool:
-    for ch in text:
-        if ("\u3040" <= ch <= "\u30ff") or ("\u4e00" <= ch <= "\u9fff"):
-            return True
-    return False
+    return any(
+        "\u3040" <= ch <= "\u30ff" or "\u4e00" <= ch <= "\u9fff" for ch in text
+    )
 
 
 def _decode_wav(wav_bytes: bytes):
@@ -47,8 +47,8 @@ def _decode_wav(wav_bytes: bytes):
 
 class LipSyncSubscriber:
     def __init__(self):
-        self._queue: "queue.Queue[Dict[str, Any]]" = queue.Queue()
-        self._thread: Optional[threading.Thread] = None
+        self._queue: queue.Queue[dict[str, Any]] = queue.Queue()
+        self._thread: threading.Thread | None = None
         self._running = False
         self._next_start = 0.0
         self._bridge = None
@@ -81,22 +81,18 @@ class LipSyncSubscriber:
         except Exception:  # noqa: BLE001
             pass
         # sentinel to unblock the worker
-        try:
+        with contextlib.suppress(Exception):
             self._queue.put_nowait(None)
-        except Exception:  # noqa: BLE001
-            pass
         if self._thread is not None:
             self._thread.join(timeout=2.0)
         self._thread = None
 
-    def _on_event(self, event: Dict[str, Any]) -> None:
+    def _on_event(self, event: dict[str, Any]) -> None:
         """Fast: just enqueue. Never block the voice pipeline."""
         if not getattr(config, "VOICE_LIP_SYNC", True) if config else True:
             return
-        try:
+        with contextlib.suppress(Exception):  # never block the pipeline
             self._queue.put_nowait(event)
-        except Exception:  # noqa: BLE001
-            pass
 
     def _engine_ready(self) -> bool:
         em = self._engine_manager
@@ -108,7 +104,8 @@ class LipSyncSubscriber:
             return True
 
     def _worker_loop(self) -> None:
-        import os, sys
+        import os
+        import sys
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         if here not in sys.path:
             sys.path.insert(0, here)
@@ -125,7 +122,8 @@ class LipSyncSubscriber:
             from desktop.mate_bridge import MateBridge
         except Exception:  # noqa: BLE001
             try:
-                import sys, os
+                import os
+                import sys
                 here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                 if here not in sys.path:
                     sys.path.insert(0, here)

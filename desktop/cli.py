@@ -28,10 +28,8 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from typing import Optional
 
 import sounddevice as sd
-
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -69,7 +67,7 @@ def _list_devices() -> None:
         print(f"{mark} [{i}] {info.get('name', '?')} ({','.join(kinds)})")
 
 
-def _parse_args(argv: Optional[list[str]] = None):
+def _parse_args(argv: list[str] | None = None):
     import argparse
 
     p = argparse.ArgumentParser(
@@ -139,7 +137,7 @@ async def _run(args) -> None:
         await shutdown_companion(booted)
 
 
-def main(argv: Optional[list[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
     if args.list_devices:
         _list_devices()

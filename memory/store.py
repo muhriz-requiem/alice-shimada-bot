@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 
 import config
 from bot.logging_setup import get_logger
@@ -61,10 +61,8 @@ def init_db() -> None:
             )
         """)
         c.execute("CREATE INDEX IF NOT EXISTS idx_messages_user ON messages(user_id)")
-        try:
+        with suppress(sqlite3.OperationalError):
             c.execute("ALTER TABLE relationships ADD COLUMN gift_count INTEGER DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
     log.info(f"Memory database ready at {config.MEMORY_DB_PATH}")
 
 

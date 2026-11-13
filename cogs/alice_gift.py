@@ -158,8 +158,7 @@ class AliceGiftCog(commands.Cog):
             memory_store.increment_gift_count, user_id
         )
 
-        category = _GIFTS_DATA.get("categories", {}).get(category_key, {})
-        reaction_hint = category.get("reaction_hint", _GIFTS_DATA.get("fallback_reaction"))
+        _GIFTS_DATA.get("categories", {}).get(category_key, {})
 
         messages = prompt_builder.build_gift_prompt(
             character,
@@ -197,10 +196,7 @@ class AliceGiftCog(commands.Cog):
         display_reply = f"{reply}\n{gif}" if gif else reply
 
         # Friendly category name for public message
-        if category_key == "letter":
-            public_desc = "a letter"
-        else:
-            public_desc = _prepend_article(item_description)
+        public_desc = "a letter" if category_key == "letter" else _prepend_article(item_description)
 
         try:
             channel = self.bot.get_channel(int(channel_id))

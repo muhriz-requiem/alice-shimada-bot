@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """JSON-lines phoneme worker backed by GPT-SoVITS's own text backend.
 
 Runs inside the GPT-SoVITS venv (its python has g2p_en + nltk + the
@@ -51,7 +50,7 @@ def main() -> None:
             if not text.strip():
                 raise ValueError("empty text")
             if lang != "en":
-                raise ValueError("unsupported lang: %r" % lang)
+                raise ValueError(f"unsupported lang: {lang!r}")
             # exact parity with the server's english chain:
             norm = english.text_normalize(text)
             phones = english.g2p(norm)

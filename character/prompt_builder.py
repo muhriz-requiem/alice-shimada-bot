@@ -435,26 +435,9 @@ def build_gift_prompt(
     Build a minimal gift-specific prompt for token efficiency.
     Only includes essential character context + gift instructions.
     """
-    rules = character.prompt_rules or {}
-    trigger_phrases = rules.get("identity_trigger_phrases", [])
-    blocked_phrases = rules.get("memory_blocked_phrases", [])
-    never_say = rules.get("never_say_phrases", [])
-
     tone = character.relationship_tone(relationship_key) if relationship_key else {
         "tone": "neutral", "trust": 0.5, "warmth": 0.5,
     }
-
-    clean_memory = sanitize_memory(memory_snippets, blocked_phrases)
-    memory_text = format_memory(clean_memory, character.identity_keywords)
-
-    strict_mode = ""
-    if _is_identity_query(item_description, trigger_phrases):
-        strict_mode = (
-            "STRICT MODE ACTIVE:\n"
-            "- Answer ONLY using the identity block\n"
-            "- Do NOT invent identity\n"
-            "- Do NOT roleplay alternative identity\n"
-        )
 
     # Minimal never_say - just the most critical
     never_say_block = 'NEVER SAY: "How can I help?", "As an AI", "I am an assistant"'
@@ -504,7 +487,7 @@ def build_gift_prompt(
         "HARD RULE: Never stammer (no \"F-Father\" / \"H-Hi\" fragments). "
         "Ellipses (...) are fine -- use them sparingly for quiet, trailing-off moments.",
     ]
-    
+
     if is_letter:
         system_parts.append(
             "SPECIAL -- LETTER READING (MANDATORY):\n"
@@ -516,11 +499,11 @@ def build_gift_prompt(
             f"Your reply MUST start with the muttered reading in *asterisks*.\n"
             f"The letter reads: \"{letter_content}\""
         )
-    
+
     system_parts.append(
         "FINAL: Stay in character. No assistant tone. No questions unless asked. Reply ONLY as " + character.display_name + "."
     )
-    
+
     system_prompt = "\n\n".join(part for part in system_parts if part.strip())
 
     messages: list[dict] = [{"role": "system", "content": system_prompt}]

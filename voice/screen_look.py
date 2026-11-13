@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import base64
 import re
-from typing import Optional
 
 # Explicit look: she should CAPTURE and comment.
 _EXPLICIT_LOOK_RE = re.compile(
@@ -82,7 +81,7 @@ _SECOND_SCREEN_RE = re.compile(
 )
 
 
-def match_monitor_hint(text: str) -> Optional[str]:
+def match_monitor_hint(text: str) -> str | None:
     """Monitor override for the capture: "1" for second-screen asks,
     None for the configured default."""
     if _SECOND_SCREEN_RE.search(text or ""):

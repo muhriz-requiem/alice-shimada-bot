@@ -211,12 +211,11 @@ def _write_report(eval_dir: Path, rows: list[dict], refs: dict[str, str]) -> Non
             a["disagree"] += 1
 
     # Baseline = moonshine-base / off for disagreement reference
-    baseline = {(r["clip"]): r["hyp"] for r in rows if r["candidate"] == "moonshine-base" and r["mode"] == "off"}
 
     lines = [
         "# STT Eval Report",
         "",
-        f"Candidates: {len(set(r['candidate'] for r in rows))} | Modes: {len(set(r['mode'] for r in rows))} | Clips: {len(set(r['clip'] for r in rows))}",
+        f"Candidates: {len({r['candidate'] for r in rows})} | Modes: {len({r['mode'] for r in rows})} | Clips: {len({r['clip'] for r in rows})}",
         f"Corrected refs: {len(refs)}",
         "",
         "| candidate | mode | WER | p50 ms | p95 ms | disagree vs base | VRAM MB |",
@@ -269,7 +268,7 @@ def run(eval_dir: Path, beam: int, modes: list[str], candidates: list[str] | Non
 
     cand_list = _CANDIDATES
     if candidates:
-        cand_list = [(l, o) for l, o in _CANDIDATES if l in candidates]
+        cand_list = [(label, o) for label, o in _CANDIDATES if label in candidates]
     rows = []
     for label, overrides in cand_list:
         rows.extend(_run_candidate(label, overrides, all_clips, modes, beam))

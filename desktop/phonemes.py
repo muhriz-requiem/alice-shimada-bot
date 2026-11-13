@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Client for the phoneme worker (see tools/phoneme_worker.py).
 
 Spawns a persistent helper process inside the GPT-SoVITS venv so every
@@ -12,7 +11,6 @@ import os
 import queue
 import subprocess
 import threading
-from typing import List, Optional
 
 try:  # repo-relative config (worker exe comes from the SoVITS settings)
     import config
@@ -31,12 +29,12 @@ class PhonemeError(RuntimeError):
 class PhonemeWorker:
     """Lazy persistent worker subprocess with JSON-lines request/reply."""
 
-    def __init__(self, python_exe: Optional[str] = None,
+    def __init__(self, python_exe: str | None = None,
                  start_timeout: float = 45.0) -> None:
         self._exe = python_exe
         self._start_timeout = start_timeout
-        self._proc: Optional[subprocess.Popen] = None
-        self._lines: "queue.Queue[Optional[dict]]" = queue.Queue()
+        self._proc: subprocess.Popen | None = None
+        self._lines: queue.Queue[dict | None] = queue.Queue()
         self._next_id = 1
         self._ready = False
 
@@ -71,18 +69,19 @@ class PhonemeWorker:
             )
         except OSError as exc:
             self._proc = None
-            raise PhonemeError("could not spawn phoneme worker: %s" % exc)
+            raise PhonemeError(f"could not spawn phoneme worker: {exc}") from exc
         threading.Thread(target=self._reader, daemon=True).start()
 
         try:
             first = self._wait_line(self._start_timeout)
         except queue.Empty:
             self.close()
-            raise PhonemeError("phoneme worker did not answer within %.0fs"
-                               % self._start_timeout)
+            raise PhonemeError(
+                f"phoneme worker did not answer within {self._start_timeout:.0f}s"
+            ) from None
         if not first or first.get("event") != "ready":
             self.close()
-            raise PhonemeError("phoneme worker init failed: %s" % (first,))
+            raise PhonemeError(f"phoneme worker init failed: {first}")
         self._ready = True
         log.info("Phoneme worker ready (pid %s)", self._proc.pid)
 
@@ -114,7 +113,7 @@ class PhonemeWorker:
         return self._ready
 
     def phonemize(self, text: str, lang: str = "en",
-                  timeout: float = 20.0) -> List[str]:
+                  timeout: float = 20.0) -> list[str]:
         """Return the phone list for `text` (may block until ready)."""
         if not self.ensure():
             raise PhonemeError("phoneme worker unavailable")
@@ -133,14 +132,14 @@ class PhonemeWorker:
                 resp = self._wait_line(timeout)
             except queue.Empty:
                 raise PhonemeError(
-                    "phoneme reply timeout after %.0fs" % timeout) from None
+                    f"phoneme reply timeout after {timeout:.0f}s") from None
             if resp is None:
                 self._proc = None
                 raise PhonemeError("phoneme worker exited unexpectedly")
             if resp.get("id") != rid:
                 continue  # stray/mismatched line: keep waiting for ours
             if not resp.get("ok"):
-                raise PhonemeError("phonemize failed: %s" % resp.get("err"))
+                raise PhonemeError(f"phonemize failed: {resp.get('err')}")
             return resp.get("phones", [])
 
     def close(self) -> None:

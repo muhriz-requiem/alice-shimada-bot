@@ -154,7 +154,7 @@ def apply() -> int:
             print(f"WARNING: {p}")
         print("Aborting: patch anchors do not match this GPT-SoVITS build.")
         return 3
-    for rel, old, _new in EDITS:
+    for rel, _old, _new in EDITS:
         path = root / rel
         backup = path.with_suffix(".alice_orig.py")
         if not backup.exists():

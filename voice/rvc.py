@@ -7,17 +7,17 @@ the trained RVC model via D:\\RVC offline inference (infer.vc.modules.VC).
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 import tempfile
 import threading
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 
-from bot.logging_setup import get_logger
 import config
+from bot.logging_setup import get_logger
 
 log = get_logger("voice.rvc")
 
@@ -42,7 +42,7 @@ class _rcwd:
         return False
 
 
-def _resolve_path(raw: str) -> Optional[Path]:
+def _resolve_path(raw: str) -> Path | None:
     """Resolve a possibly-relative path against the bot project root."""
     if not raw:
         return None
@@ -52,11 +52,11 @@ def _resolve_path(raw: str) -> Optional[Path]:
     return p.resolve()
 
 
-def _model_path() -> Optional[Path]:
+def _model_path() -> Path | None:
     return _resolve_path(config.VOICE_RVC_MODEL_PATH)
 
 
-def _index_path() -> Optional[Path]:
+def _index_path() -> Path | None:
     return _resolve_path(config.VOICE_RVC_INDEX_PATH)
 
 
@@ -177,7 +177,7 @@ def preload() -> None:
 
                 t0 = __import__("time").perf_counter()
                 pipe.model_rmvpe = RMVPE(
-                    "%s/rmvpe.pt" % os.environ["rmvpe_root"],
+                    f"{os.environ['rmvpe_root']}/rmvpe.pt",
                     is_half=pipe.is_half,
                     device=pipe.device,
                 )
@@ -204,7 +204,7 @@ def preload() -> None:
 def convert(
     audio: np.ndarray,
     sample_rate: int = 16000,
-    pitch_shift: Optional[int] = None,
+    pitch_shift: int | None = None,
 ) -> np.ndarray:
     """
     Convert audio to Alice's voice using RVC.
@@ -299,10 +299,8 @@ def convert(
         return audio
     finally:
         if tmp_path:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp_path)
-            except OSError:
-                pass
 
 
 def soften_human(audio: np.ndarray, sample_rate: int = 16000) -> np.ndarray:

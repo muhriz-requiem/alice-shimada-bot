@@ -11,9 +11,8 @@ from __future__ import annotations
 import asyncio
 import random
 
-
-from bot.logging_setup import get_logger
 import config
+from bot.logging_setup import get_logger
 
 log = get_logger("voice.backchannel")
 
@@ -204,17 +203,11 @@ class BackchannelGenerator:
             return False
 
         # Don't backchannel if Alice just had a full response
-        if alice_silence < 2.0:
-            return False
-
-        return True
+        return not alice_silence < 2.0
 
     def pick_backchannel(self, guild_id: int, language: str = "ja") -> str:
         """Pick a random backchannel appropriate for the context."""
-        if language.startswith("ja"):
-            pool = BACKCHANNELS_JA
-        else:
-            pool = BACKCHANNELS_EN
+        pool = BACKCHANNELS_JA if language.startswith("ja") else BACKCHANNELS_EN
 
         choice = random.choice(pool)
 

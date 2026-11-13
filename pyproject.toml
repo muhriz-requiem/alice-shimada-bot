@@ -58,14 +58,47 @@ optional-dependencies = { dev = [
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+exclude = [
+    "_legacy", "venv", "__pycache__", "data", "logs",
+    # One-off dataset tooling, never published (see .gitignore)
+    "AliceVoiceExtraction",
+    # Retired overlay-era probes kept on disk only (see .gitignore)
+    "desktop/tools/alpha_test.py",
+    "desktop/tools/composition_bench.py",
+    "desktop/tools/overlay_cycle_test.py",
+    "desktop/tools/probe_live_overlay.py",
+    "desktop/tools/verify_live_overlay.py",
+]
+
+[tool.ruff.lint]
 select = [
     "E", "W", "F", "I", "UP", "B", "C4", "SIM", "T20",
 ]
 ignore = [
     "E501", "B008", "SIM102",
 ]
-per-file-ignores = { "tests/*" = ["S101", "T201"], "_legacy/*" = [] }
-exclude = ["_legacy", "venv", "__pycache__", "data", "logs"]
+
+[tool.ruff.lint.per-file-ignores]
+# CLI / maintenance entry points: stdout output IS the interface
+"manage.py" = ["T201", "E402"]
+"stt_eval.py" = ["T201", "E741"]
+"desktop/cli.py" = ["T201", "E402"]
+"desktop/app.py" = ["T201", "E402"]                     # T201: debug-console prints
+"desktop/discord_service.py" = ["T201", "E402"]
+"desktop/convert/*" = ["T201", "B023", "UP031"]          # B023: closures are consumed within the same loop iteration; UP031: printf style throughout - this tool's output is hash-verified, don't churn it
+"desktop/sovits_patch/*" = ["T201"]
+"desktop/tools/make_icon.py" = ["T201"]
+# Deliberate import-time work between imports:
+# voice/__init__ applies the DAVE monkey-patches before the pipeline import;
+# streaming_source imports discord after its compat block
+"voice/__init__.py" = ["E402"]
+"voice/streaming_source.py" = ["E402"]
+"desktop/voice_app.py" = ["E402"]
+"main.py" = ["E402"]
+# RVC's own modules read these exact lowercase env-var names - their contract
+"voice/rvc.py" = ["SIM112"]
+"tests/*" = ["S101", "T201", "E731", "E402"]
+"_legacy/*" = []
 
 [tool.ruff.format]
 quote-style = "double"

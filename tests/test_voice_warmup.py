@@ -1,11 +1,5 @@
 """Behavioral checks for the warmup gating change: Alice does not listen until TTS is ready."""
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import discord
-import pytest
-
-from voice import readiness
 
 
 class FakeVc:

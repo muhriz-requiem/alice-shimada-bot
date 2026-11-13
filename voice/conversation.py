@@ -10,10 +10,9 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Optional
 
-from bot.logging_setup import get_logger
 import config
+from bot.logging_setup import get_logger
 
 log = get_logger("voice.conversation")
 
@@ -51,7 +50,7 @@ class SpeakerState:
 class ConversationTracker:
     """
     Tracks conversation context per guild for smart response decisions.
-    
+
     Maintains:
     - Rolling buffer of last N utterances
     - Per-speaker state (who spoke last, how often)
@@ -105,7 +104,7 @@ class ConversationTracker:
         return utterance
 
     def get_recent(
-        self, guild_id: int, count: Optional[int] = None
+        self, guild_id: int, count: int | None = None
     ) -> list[Utterance]:
         """Get recent utterances for a guild."""
         utterances = self._utterances.get(guild_id, [])
@@ -117,7 +116,7 @@ class ConversationTracker:
         """Get timestamp of when Alice last spoke in this guild."""
         return self._alice_last_spoke.get(guild_id, 0.0)
 
-    def get_last_speaker(self, guild_id: int) -> Optional[int]:
+    def get_last_speaker(self, guild_id: int) -> int | None:
         """Get the user_id of the last non-bot speaker."""
         for u in reversed(self._utterances.get(guild_id, [])):
             if not u.is_bot:
@@ -140,7 +139,6 @@ class ConversationTracker:
 
     def get_active_speakers(self, guild_id: int, within: float = 5.0) -> list[int]:
         """Get speakers who spoke within the last N seconds."""
-        now = time.time()
         speakers = []
         for u in reversed(self._utterances.get(guild_id, [])):
             if u.age <= within and not u.is_bot:
@@ -148,7 +146,7 @@ class ConversationTracker:
                     speakers.append(u.user_id)
         return speakers
 
-    def get_speaker_state(self, guild_id: int, user_id: int) -> Optional[SpeakerState]:
+    def get_speaker_state(self, guild_id: int, user_id: int) -> SpeakerState | None:
         """Get the state of a specific speaker."""
         return self._speakers.get(guild_id, {}).get(user_id)
 

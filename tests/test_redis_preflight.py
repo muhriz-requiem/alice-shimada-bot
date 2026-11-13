@@ -14,7 +14,6 @@ of refusing them, so redis-py's connect + internal retries hung for
 
 from __future__ import annotations
 
-import asyncio
 import time
 from types import SimpleNamespace
 

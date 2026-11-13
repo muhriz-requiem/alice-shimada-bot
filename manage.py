@@ -31,6 +31,8 @@ from bot.logging_setup import get_logger, setup_logging
 setup_logging()
 log = get_logger("manage")
 
+import contextlib
+
 import config
 from memory import store as memory_store
 from reddit import fetcher, updater
@@ -85,7 +87,7 @@ def cmd_stats(args: argparse.Namespace) -> None:
     print(f"AI backend: {config.AI_BACKEND}")
     print(f"Character: {config.CHARACTER_NAME}")
     print(f"Stored messages: {memory_store.count_messages()}")
-    for sub, meta in config.REDDIT_SUBREDDITS.items():
+    for _sub, meta in config.REDDIT_SUBREDDITS.items():
         count = 0
         if meta["posts_file"].exists():
             try:
@@ -275,10 +277,8 @@ def cmd_latency(args: argparse.Namespace) -> None:
                 print(f"  {stage:<10} p50={_pct(vals, 0.5):.2f}s p95={_pct(vals, 0.95):.2f}s")
         print()
 
-    try:
+    with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(_run())
-    except KeyboardInterrupt:
-        pass
 
 
 def main() -> None:

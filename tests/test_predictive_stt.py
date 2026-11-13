@@ -15,7 +15,6 @@ import numpy as np
 import config
 from voice.pipeline import VoicePipeline
 
-
 GUILD = 123
 USER = 42
 

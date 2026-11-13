@@ -9,17 +9,19 @@ using discord-ext-voice-recv for proper audio reception.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
 import discord
 from discord import app_commands
 from discord.ext import commands, voice_recv
 
-from bot.logging_setup import get_logger
 import config
+from bot.logging_setup import get_logger
 from voice import init_pipeline, readiness, voice_pipeline, voice_state
-from voice.rvc import is_available as rvc_available, is_loaded as rvc_loaded
-from voice.stt import is_loaded as stt_loaded
+from voice.rvc import is_available as rvc_available
+from voice.rvc import is_loaded as rvc_loaded
 from voice.state import TurnState
+from voice.stt import is_loaded as stt_loaded
 
 log = get_logger("cogs.voice")
 
@@ -299,10 +301,8 @@ class VoiceCog(commands.Cog, name="Voice"):
             voice_pipeline.start_monitor(guild_id)
             await vc.guild.change_voice_state(channel=vc.channel, self_mute=False)
             log.info(f"Alice started listening (TTS ready: {readiness.state()})")
-            try:
+            with contextlib.suppress(Exception):
                 await interaction.followup.send("Voice ready — listening now.")
-            except Exception:
-                pass
         except Exception as e:
             log.error(f"Start-when-ready failed: {e}", exc_info=True)
 

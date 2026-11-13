@@ -25,13 +25,15 @@ Command surface (implemented in MtBridge):
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import socket
 import threading
 import time
 import zipfile
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any
 
 from bot.logging_setup import get_logger
 
@@ -52,7 +54,7 @@ def vrm_port() -> int:
     return DEFAULT_PORT
 
 
-def _read_gltf_json(path: str) -> Optional[dict]:
+def _read_gltf_json(path: str) -> dict | None:
     """Read the glTF JSON of a .vrm/.glb/.gltf file (VRM = binary glTF)."""
     try:
         with open(path, "rb") as f:
@@ -70,9 +72,8 @@ def _read_gltf_json(path: str) -> Optional[dict]:
                 return json.loads(f.read(chunk_len).decode("utf-8"))
         if head[:2] == b"PK":
             # defensive: some tools re-zip; keep the zip path too
-            with zipfile.ZipFile(path) as z:
-                with z.open("model.gltf") as fh:
-                    return json.loads(fh.read().decode("utf-8"))
+            with zipfile.ZipFile(path) as z, z.open("model.gltf") as fh:
+                return json.loads(fh.read().decode("utf-8"))
         with open(path, "rb") as f:
             return json.loads(f.read().decode("utf-8"))
     except Exception as exc:  # noqa: BLE001
@@ -80,7 +81,7 @@ def _read_gltf_json(path: str) -> Optional[dict]:
         return None
 
 
-def vrm_expression_map(vrm_path: str) -> Dict[str, str]:
+def vrm_expression_map(vrm_path: str) -> dict[str, str]:
     """Extract VRM 1.0 preset -> mesh blendshape-name mapping from a .vrm.
 
     Blendshape names come from mesh.extras.targetNames in the same order
@@ -95,14 +96,14 @@ def vrm_expression_map(vrm_path: str) -> Dict[str, str]:
 
     meshes = gltf.get("meshes") or []
     nodes = gltf.get("nodes") or []
-    target_names: List[List[str]] = []
+    target_names: list[list[str]] = []
     for mesh in meshes:
         tn = ((mesh.get("extras") or {}).get("targetNames")) or []
         target_names.append(list(tn))
 
     # VRM 1.0 binds reference a *node* that carries the mesh; 0.x binds
     # reference mesh directly. Resolve both to a mesh index.
-    def _bind_mesh(bind: dict) -> Optional[int]:
+    def _bind_mesh(bind: dict) -> int | None:
         m = bind.get("mesh")
         if isinstance(m, int) and 0 <= m < len(target_names):
             return m
@@ -115,7 +116,7 @@ def vrm_expression_map(vrm_path: str) -> Dict[str, str]:
 
     exts = gltf.get("extensions") or {}
     ext = exts.get("VRMC_vrm") or exts.get("VRM") or {}
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
 
     # VRM 1.0: expressions.preset = {presetName: expr}, expressions.custom = [expr]
     # VRM 0.x: blendShapeMaster.blendShapeGroups = [group with presetName + binds]
@@ -135,7 +136,7 @@ def vrm_expression_map(vrm_path: str) -> Dict[str, str]:
                     break
 
     expr_root = (ext.get("expressions") or {})
-    entries: List[Tuple[str, Any]] = []
+    entries: list[tuple[str, Any]] = []
     preset_dict = expr_root.get("preset")
     if isinstance(preset_dict, dict):
         entries.extend(preset_dict.items())
@@ -155,18 +156,17 @@ def vrm_expression_map(vrm_path: str) -> Dict[str, str]:
     return out
 
 
-def vrm_preset_weights(vrm_path: str) -> Dict[str, float]:
+def vrm_preset_weights(vrm_path: str) -> dict[str, float]:
     """Default weights per VRM preset, from the model's JSON as shipped."""
     try:
-        with zipfile.ZipFile(vrm_path) as z:
-            with z.open("model.gltf") as f:
-                gltf = json.loads(f.read().decode("utf-8"))
+        with zipfile.ZipFile(vrm_path) as z, z.open("model.gltf") as f:
+            gltf = json.loads(f.read().decode("utf-8"))
     except Exception as exc:  # noqa: BLE001
         log.warning("cannot read %s: %s", vrm_path, exc)
         return {}
     exts = gltf.get("extensions") or {}
     ext = exts.get("VRMC_vrm") or exts.get("VRM") or {}
-    out: Dict[str, float] = {}
+    out: dict[str, float] = {}
     for section in ("expressions", "custom"):
         for expr in ext.get(section) or []:
             preset = expr.get("preset") or ""
@@ -207,9 +207,9 @@ PHONEME_TO_VISEME = {
 _KANA_SKIP = set("っャュョぁぃぅぇぉーヴ")
 
 
-def kana_to_phonemes(text: str) -> List[str]:
+def kana_to_phonemes(text: str) -> list[str]:
     """Crude phoneme segmenter for viseme timing (no dictionary needed)."""
-    out: List[str] = []
+    out: list[str] = []
     for ch in text:
         cp = ord(ch)
         if ch in _KANA_SKIP:
@@ -222,7 +222,7 @@ def kana_to_phonemes(text: str) -> List[str]:
 
 
 def _num(v: float) -> str:
-    s = ("%.3f" % v).rstrip("0").rstrip(".")
+    s = f"{v:.3f}".rstrip("0").rstrip(".")
     return s or "0"
 
 
@@ -241,13 +241,13 @@ def _envelope(step: int, steps: int) -> float:
 class MateBridge:
     """Reconnecting client for MtBridge. Thread-safe for senders."""
 
-    def __init__(self, host: str = DEFAULT_HOST, port: Optional[int] = None,
+    def __init__(self, host: str = DEFAULT_HOST, port: int | None = None,
                  connect_timeout: float = 3.0, quiet_window: float = 1.2) -> None:
         self.host = host
         self.port = port if port is not None else vrm_port()
         self.connect_timeout = connect_timeout
         self.quiet_window = quiet_window  # seconds of silence that end a reply
-        self._sock: Optional[socket.socket] = None
+        self._sock: socket.socket | None = None
         self._lock = threading.Lock()
         self._closed = False
 
@@ -282,10 +282,8 @@ class MateBridge:
             sock = self._sock
             self._sock = None
         if sock is not None:
-            try:
+            with contextlib.suppress(OSError):
                 sock.close()
-            except OSError:
-                pass
 
     def shutdown(self) -> None:
         self._closed = True
@@ -300,7 +298,7 @@ class MateBridge:
 
     # -- raw command -------------------------------------------------------
 
-    def command(self, line: str, expect_quiet: Optional[float] = None) -> List[str]:
+    def command(self, line: str, expect_quiet: float | None = None) -> list[str]:
         """Send one line and collect replies until a quiet window passes."""
         self.ensure_connected()
         window = self.quiet_window if expect_quiet is None else expect_quiet
@@ -320,7 +318,7 @@ class MateBridge:
             while time.time() - started < deadline_guard:
                 try:
                     chunk = sock.recv(65536)
-                except socket.timeout:
+                except TimeoutError:
                     break
                 except OSError as exc:
                     self.close()
@@ -370,9 +368,9 @@ class MateBridge:
         return ""
 
     @staticmethod
-    def _parse_probe(line: str) -> Dict[str, Any]:
+    def _parse_probe(line: str) -> dict[str, Any]:
         fields = line.split()
-        info: Dict[str, Any] = {"shapes": {}}
+        info: dict[str, Any] = {"shapes": {}}
         for f in fields:
             if f.startswith("renderer="):
                 info["renderer"] = f[len("renderer="):]
@@ -392,21 +390,19 @@ class MateBridge:
                 seen_shapes = True
         return info
 
-    def probe(self, include_inactive: bool = False) -> Dict[str, Any]:
+    def probe(self, include_inactive: bool = False) -> dict[str, Any]:
         reply = self.command("probeall" if include_inactive else "probe",
                              expect_quiet=2.5)
-        renderers: List[Dict[str, Any]] = []
-        statics: List[Dict[str, Any]] = []
-        meta: Dict[str, Any] = {}
+        renderers: list[dict[str, Any]] = []
+        statics: list[dict[str, Any]] = []
+        meta: dict[str, Any] = {}
         for r in reply:
             if r.startswith("probeall total="):
                 for part in r.split():
                     for key in ("total", "active", "statics", "staticsActive"):
                         if part.startswith(key + "="):
-                            try:
+                            with contextlib.suppress(ValueError):
                                 meta[key] = int(part[len(key) + 1:])
-                            except ValueError:
-                                pass
             elif r.startswith("probe renderer="):
                 renderers.append(self._parse_probe(r))
             elif r.startswith("probeall renderer="):
@@ -415,7 +411,7 @@ class MateBridge:
                 renderers.append(item)
             elif r.startswith("probeall static="):
                 fields = r.split()
-                entry: Dict[str, Any] = {}
+                entry: dict[str, Any] = {}
                 for f in fields:
                     if f.startswith("static="):
                         entry["name"] = f[len("static="):]
@@ -428,9 +424,9 @@ class MateBridge:
                 statics.append(entry)
         return {"meta": meta, "renderers": renderers, "statics": statics}
 
-    def avinfo(self) -> Dict[str, str]:
+    def avinfo(self) -> dict[str, str]:
         reply = self.command("avinfo", expect_quiet=2.0)
-        out: Dict[str, str] = {}
+        out: dict[str, str] = {}
         for r in reply:
             if r.startswith("avinfo err:") :
                 out["error"] = r
@@ -496,34 +492,32 @@ class MateBridge:
         self.command("ereset", expect_quiet=3.0)
         self.command("lock 0", expect_quiet=2.0)
 
-    def query_expressions(self) -> Dict[str, float]:
+    def query_expressions(self) -> dict[str, float]:
         """Read back the engine's live expression weights."""
         reply = self.command("equery", expect_quiet=2.5)
-        out: Dict[str, float] = {}
+        out: dict[str, float] = {}
         for r in reply:
             if r.startswith("equery "):
                 for part in r.split()[1:]:
                     k, _, v = part.partition("=")
-                    try:
+                    with contextlib.suppress(ValueError):
                         out[k] = float(v)
-                    except ValueError:
-                        pass
         return out
 
     def set_vrm_preset(self, preset: str, weight: float,
-                       shape_map: Optional[Dict[str, str]] = None) -> bool:
+                       shape_map: dict[str, str] | None = None) -> bool:
         name = (shape_map or {}).get(preset, preset)
         return self.set_expression(name, weight)
 
     # -- lip-sync (engine-layer expressions) --------------------------------
 
-    def clear_mouth(self, shape_map: Optional[Dict[str, str]] = None) -> None:
+    def clear_mouth(self, shape_map: dict[str, str] | None = None) -> None:
         for p in ("aa", "ih", "ou", "ee", "oh"):
             self.set_engine_preset(p, 0.0)
 
     def speak_visemes(self, phonemes: Sequence[str],
                       seconds_per_phoneme: float = 0.115,
-                      shape_map: Optional[Dict[str, str]] = None) -> None:
+                      shape_map: dict[str, str] | None = None) -> None:
         """Stream a viseme timeline through the engine's expression layer.
 
         writes persist until the next write of the same key, so each phoneme
@@ -534,8 +528,8 @@ class MateBridge:
             return
         self.command("lock 1", expect_quiet=2.0)
         try:
-            prev: Optional[str] = None
-            for i, ph in enumerate(phonemes):
+            prev: str | None = None
+            for ph in phonemes:
                 vis = (PHONEME_TO_VISEME.get(ph.lower())
                        or PHONEME_TO_VISEME.get(ph))
                 if vis is None:
@@ -550,7 +544,7 @@ class MateBridge:
         except (OSError, BridgeNotConnected) as exc:
             log.warning("viseme stream interrupted: %s", exc)
 
-    def speak_timeline(self, events: Sequence[Tuple[Optional[str], float,
+    def speak_timeline(self, events: Sequence[tuple[str | None, float,
                                                      float]]) -> None:
         """Play a precomputed mouth timeline over a dedicated fire-and-forget link.
 
@@ -591,7 +585,7 @@ class MateBridge:
             while True:
                 try:
                     chunk = raw.recv(65536)
-                except socket.timeout:
+                except TimeoutError:
                     continue
                 except OSError:
                     break
@@ -626,17 +620,14 @@ class MateBridge:
                 target = t + slot
                 if preset is None or weight <= 0.0:
                     if prev is not None:
-                        raw.sendall(
-                            ("exp %s 0\n" % prev).encode("utf-8"))
+                        raw.sendall(f"exp {prev} 0\n".encode())
                         prev = None
                 else:
                     if preset != prev:
                         if prev is not None:
-                            raw.sendall(
-                                ("exp %s 0\n" % prev).encode("utf-8"))
+                            raw.sendall(f"exp {prev} 0\n".encode())
                         raw.sendall(
-                            ("exp %s %s\n"
-                             % (preset, _num(float(weight)))).encode("utf-8"))
+                            f"exp {preset} {_num(float(weight))}\n".encode())
                         prev = preset
                 # Absolute-deadline sleep: overshoot stays inside one slot.
                 while True:
@@ -646,17 +637,15 @@ class MateBridge:
                     time.sleep(min(remain, 0.25))
                 t = target
             if prev is not None:
-                raw.sendall(("exp %s 0\n" % prev).encode("utf-8"))
+                raw.sendall(f"exp {prev} 0\n".encode())
                 prev = None
             # Let the reader collect the trailing acks before teardown.
             time.sleep(0.15)
         except (OSError, BridgeNotConnected) as exc:
             log.warning("mouth timeline interrupted: %s", exc)
         finally:
-            try:
+            with contextlib.suppress(OSError):
                 raw.close()
-            except OSError:
-                pass
             reader.join(timeout=0.5)
         if err_lines:
             log.warning("mouth timeline exp errors: %s", err_lines[:5])

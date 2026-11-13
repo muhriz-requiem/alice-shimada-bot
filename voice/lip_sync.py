@@ -7,8 +7,10 @@ contexts where no avatar exists.
 """
 from __future__ import annotations
 
+import contextlib
 import threading
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
+from typing import Any
 
 log_name = "voice.lip_sync"
 
@@ -22,25 +24,22 @@ except Exception:  # noqa: BLE001 - keep importable even if logging isn't ready
 # Subscriber callbacks receive one event dict:
 #   {"text": str, "wav_bytes": bytes, "sr": int, "engine": str,
 #    "duration": float}
-_subscribers: List[Callable[[Dict[str, Any]], None]] = []
+_subscribers: list[Callable[[dict[str, Any]], None]] = []
 _lock = threading.Lock()
 
 
-def subscribe(cb: Callable[[Dict[str, Any]], None]) -> None:
+def subscribe(cb: Callable[[dict[str, Any]], None]) -> None:
     with _lock:
         if cb not in _subscribers:
             _subscribers.append(cb)
 
 
-def unsubscribe(cb: Callable[[Dict[str, Any]], None]) -> None:
-    with _lock:
-        try:
-            _subscribers.remove(cb)
-        except ValueError:
-            pass
+def unsubscribe(cb: Callable[[dict[str, Any]], None]) -> None:
+    with _lock, contextlib.suppress(ValueError):
+        _subscribers.remove(cb)
 
 
-def publish(event: Dict[str, Any]) -> None:
+def publish(event: dict[str, Any]) -> None:
     """Notify subscribers. Never raises; subscribers must be fast (enqueue only)."""
     with _lock:
         subs = list(_subscribers)

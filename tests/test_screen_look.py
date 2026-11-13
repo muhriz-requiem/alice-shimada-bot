@@ -3,13 +3,11 @@ Tests for the screen-glance feature: intent matching, privacy denylist,
 prompt-image attachment, provider gating, and the pipeline's look hook.
 """
 import base64
-import io
 
 import pytest
 
 import config
 from voice import screen_look as sl
-
 
 # --- intent matching -----------------------------------------------------
 
@@ -76,6 +74,7 @@ def test_denylist(monkeypatch):
 
 def test_change_fraction():
     import numpy as np
+
     from desktop import screen_watch
     a = np.zeros((36, 64), dtype=np.float32)
     assert screen_watch.change_fraction(a, a.copy()) == 0.0
@@ -245,8 +244,9 @@ def _make_service(monkeypatch, state, playing, **cfg):
 
 @pytest.mark.asyncio
 async def test_ambient_eligible_happy_path(monkeypatch):
-    from voice.turn_detector import TurnState
     import time as _time
+
+    from voice.turn_detector import TurnState
 
     svc = _make_service(monkeypatch, TurnState.IDLE, playing=False)
     svc._last_glance_at = _time.monotonic() - 1e6  # long ago
@@ -255,8 +255,9 @@ async def test_ambient_eligible_happy_path(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ambient_blocked_while_playing(monkeypatch):
-    from voice.turn_detector import TurnState
     import time as _time
+
+    from voice.turn_detector import TurnState
 
     svc = _make_service(monkeypatch, TurnState.IDLE, playing=True)
     svc._last_glance_at = _time.monotonic() - 1e6
@@ -265,8 +266,9 @@ async def test_ambient_blocked_while_playing(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ambient_blocked_without_permission(monkeypatch):
-    from voice.turn_detector import TurnState
     import time as _time
+
+    from voice.turn_detector import TurnState
 
     svc = _make_service(monkeypatch, TurnState.IDLE, playing=False, allowed=False)
     svc._last_glance_at = _time.monotonic() - 1e6
@@ -275,8 +277,9 @@ async def test_ambient_blocked_without_permission(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ambient_blocked_mid_conversation(monkeypatch):
-    from voice.turn_detector import TurnState
     import time as _time
+
+    from voice.turn_detector import TurnState
 
     svc = _make_service(monkeypatch, TurnState.MULTIPLE_SPEAKERS, playing=False)
     svc._last_glance_at = _time.monotonic() - 1e6
@@ -285,8 +288,9 @@ async def test_ambient_blocked_mid_conversation(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ambient_blocked_on_cooldown(monkeypatch):
-    from voice.turn_detector import TurnState
     import time as _time
+
+    from voice.turn_detector import TurnState
 
     svc = _make_service(monkeypatch, TurnState.IDLE, playing=False)
     svc._last_glance_at = _time.monotonic()  # just glanced
@@ -295,8 +299,9 @@ async def test_ambient_blocked_on_cooldown(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ambient_hourly_cap(monkeypatch):
-    from voice.turn_detector import TurnState
     import time as _time
+
+    from voice.turn_detector import TurnState
 
     svc = _make_service(monkeypatch, TurnState.IDLE, playing=False)
     svc._last_glance_at = _time.monotonic() - 1e6
@@ -363,7 +368,7 @@ async def test_monitor_hint_reaches_provider(monkeypatch):
 
 def test_record_glance_metrics():
     from metrics import record_glance
-    from metrics.collector import glance_total, glance_latency
+    from metrics.collector import glance_latency, glance_total
 
     before = glance_total.labels(outcome="ok")._value.get()
     record_glance("ok", 1.23)

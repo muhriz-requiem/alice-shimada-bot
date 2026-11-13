@@ -10,12 +10,11 @@ from __future__ import annotations
 
 import time
 from enum import Enum
-from typing import Optional
 
 import numpy as np
 
-from bot.logging_setup import get_logger
 import config
+from bot.logging_setup import get_logger
 
 log = get_logger("voice.turn_detector")
 
@@ -47,7 +46,7 @@ class SpeakerTracker:
         activity.add_audio(pcm_chunk)
         return activity
 
-    def get_activity(self, user_id: int) -> Optional[SpeakerActivity]:
+    def get_activity(self, user_id: int) -> SpeakerActivity | None:
         """Get a speaker's current activity."""
         return self._speakers.get(user_id)
 
@@ -62,7 +61,7 @@ class SpeakerTracker:
         """Number of users currently speaking."""
         return len(self.get_speaking_users())
 
-    def get_last_speaker(self) -> Optional[int]:
+    def get_last_speaker(self) -> int | None:
         """Get the user_id who spoke most recently."""
         if not self._speakers:
             return None
@@ -153,9 +152,9 @@ class SpeakerActivity:
 class TurnDetector:
     """
     Detects turn completion in voice conversations.
-    
+
     Uses sample-based timing for accurate detection (30x faster than wall-clock).
-    
+
     Turn states:
     - IDLE: No one has spoken recently
     - SINGLE_SPEAKER: One person talking, turn not complete
@@ -235,9 +234,7 @@ class TurnDetector:
         Turn is complete when silence exceeds threshold after speech.
         """
         state = self.get_state(guild_id)
-        if state in (TurnState.PAUSE, TurnState.LULL):
-            return True
-        return False
+        return state in (TurnState.PAUSE, TurnState.LULL)
 
     def mark_bot_playing(self, guild_id: int, playing: bool) -> None:
         """Mark whether the bot is currently playing audio."""
@@ -258,7 +255,7 @@ class TurnDetector:
             self._turn_started[guild_id] = time.time()
             log.debug(f"Turn state synced: {old_state} -> {state}")
 
-    def get_last_speaker(self, guild_id: int) -> Optional[int]:
+    def get_last_speaker(self, guild_id: int) -> int | None:
         """Get the last person who spoke."""
         tracker = self.trackers.get(guild_id)
         if tracker:

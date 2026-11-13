@@ -13,14 +13,11 @@ from __future__ import annotations
 import asyncio
 import io
 import re
-import tempfile
-from pathlib import Path
-from typing import Optional
 
 import numpy as np
 
-from bot.logging_setup import get_logger
 import config
+from bot.logging_setup import get_logger
 
 log = get_logger("voice.tts")
 
@@ -47,9 +44,9 @@ def normalize_for_tts(text: str) -> str:
 
 async def generate_tts(
     text: str,
-    voice: Optional[str] = None,
-    rate: Optional[str] = None,
-    pitch: Optional[str] = None,
+    voice: str | None = None,
+    rate: str | None = None,
+    pitch: str | None = None,
 ) -> tuple[bytes, int, str]:
     """
     Generate TTS audio and report which engine produced it.
@@ -81,9 +78,9 @@ async def generate_tts(
 
 async def generate_async(
     text: str,
-    voice: Optional[str] = None,
-    rate: Optional[str] = None,
-    pitch: Optional[str] = None,
+    voice: str | None = None,
+    rate: str | None = None,
+    pitch: str | None = None,
 ) -> tuple[bytes, int]:
     """
     Generate TTS audio asynchronously.
@@ -103,9 +100,9 @@ async def generate_async(
 
 async def _edge_generate_async(
     text: str,
-    voice: Optional[str] = None,
-    rate: Optional[str] = None,
-    pitch: Optional[str] = None,
+    voice: str | None = None,
+    rate: str | None = None,
+    pitch: str | None = None,
 ) -> tuple[bytes, int]:
     """Edge-TTS generation (original behavior)."""
     import edge_tts
@@ -138,9 +135,9 @@ async def _edge_generate_async(
 
 def generate_sync(
     text: str,
-    voice: Optional[str] = None,
-    rate: Optional[str] = None,
-    pitch: Optional[str] = None,
+    voice: str | None = None,
+    rate: str | None = None,
+    pitch: str | None = None,
 ) -> tuple[bytes, int]:
     """Synchronous wrapper for generate_async."""
     loop = asyncio.new_event_loop()
@@ -217,7 +214,7 @@ def array_to_wav_bytes(audio: np.ndarray, sample_rate: int = 24000) -> bytes:
 def is_available() -> bool:
     """Check if Edge-TTS is available."""
     try:
-        import edge_tts
+        import edge_tts  # noqa: F401 -- availability probe: the import IS the test
         return True
     except ImportError:
         return False

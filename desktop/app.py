@@ -34,7 +34,6 @@ from __future__ import annotations
 import ctypes
 import sys
 import time
-from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -47,11 +46,11 @@ log = get_logger("desktop.app")
 
 import config
 from desktop.boot_timeline import boot_timeline
-from desktop.voice_app import CompanionSession
 from desktop.discord_service import get_discord_service
 from desktop.engine_manager import MateEngineManager
 from desktop.lip_sync_subscriber import LipSyncSubscriber
 from desktop.prewarm import start_prewarm
+from desktop.voice_app import CompanionSession
 
 _MUTEX_NAME = "AliceShimadaBotDesktop"
 _ERROR_ALREADY_EXISTS = 183  # winerror.ERROR_ALREADY_EXISTS
@@ -62,7 +61,7 @@ _ERROR_ALREADY_EXISTS = 183  # winerror.ERROR_ALREADY_EXISTS
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
 
-def acquire_single_instance() -> Optional[int]:
+def acquire_single_instance() -> int | None:
     """Hold a named mutex for the process lifetime.
 
     Returns the handle on success (OWNED by this process), None when
@@ -110,7 +109,7 @@ def set_stt_engine(engine: str) -> bool:
         hosted = False
     else:
         raise ValueError(f"unknown STT engine: {engine!r}")
-    if config.VOICE_STT_HOSTED == hosted:
+    if hosted == config.VOICE_STT_HOSTED:
         return False
     config.VOICE_STT_HOSTED = hosted
     log.info("STT engine switched via tray: %s", key)
@@ -187,13 +186,11 @@ def run() -> None:
     #    Kept as None so any defensive references degrade gracefully.
     overlay = None
 
-    # 4. discord bot service (created on demand)
-    discord_svc = get_discord_service()
-
-    import pystray  # lazy: keeps headless imports cheap for tests
     import threading
 
-    def _get_overlay() -> Optional[OverlayController]:
+    import pystray  # lazy: keeps headless imports cheap for tests
+
+    def _get_overlay() -> object | None:
         return overlay
 
     def _text_companion(_item=None) -> str:
@@ -339,8 +336,8 @@ def run() -> None:
             _kernel32.AllocConsole()
             # Redirect stdout/stderr to the new console
             import io
-            sys.stdout = io.TextIOWrapper(open('CONOUT$', 'w'), write_through=True)
-            sys.stderr = io.TextIOWrapper(open('CONOUT$', 'w'), write_through=True)
+            sys.stdout = io.TextIOWrapper(open('CONOUT$', 'w'), write_through=True)  # noqa: SIM115 -- handle must outlive this scope (it becomes sys.stdout)
+            sys.stderr = io.TextIOWrapper(open('CONOUT$', 'w'), write_through=True)  # noqa: SIM115 -- same
             _debug_console = True
             print("=== Alice Debug Console ===")
             print("Logs will appear here.")

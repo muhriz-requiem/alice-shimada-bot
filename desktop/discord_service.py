@@ -18,11 +18,9 @@ Key design points:
 from __future__ import annotations
 
 import asyncio
-import logging
-import sys
+import contextlib
 import threading
 import time
-from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -41,12 +39,12 @@ class DiscordService:
 
     def __init__(self) -> None:
         self.state = "off"
-        self.error: Optional[str] = None
-        self._thread: Optional[threading.Thread] = None
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._bot: Optional[object] = None  # AliceBot instance
-        self._stop_evt: Optional[asyncio.Event] = None
-        self._started_at: Optional[float] = None
+        self.error: str | None = None
+        self._thread: threading.Thread | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._bot: object | None = None  # AliceBot instance
+        self._stop_evt: asyncio.Event | None = None
+        self._started_at: float | None = None
 
     def start(self) -> bool:
         """Start the Discord bot in a background thread.
@@ -85,11 +83,10 @@ class DiscordService:
 
         loop, evt = self._loop, self._stop_evt
         if loop is not None and evt is not None:
-            try:
-                # Signal the bot to stop from the bot's event loop
+            # Signal the bot to stop from the bot's event loop
+            # (no-op RuntimeError if the loop is already closed)
+            with contextlib.suppress(RuntimeError):
                 loop.call_soon_threadsafe(evt.set)
-            except RuntimeError:
-                pass  # loop already closed
 
         # Wait for thread to finish naturally - give it enough time for bot.close()
         thread.join(timeout=timeout)
@@ -177,7 +174,7 @@ class DiscordService:
         # A dead run_task must surface to the tray even when nobody
         # awaits it (e.g. login failure): without this the task's
         # exception sits unretrieved and the tray shows "on" forever.
-        def _on_run_done(task: "asyncio.Task") -> None:
+        def _on_run_done(task: asyncio.Task) -> None:
             if task.cancelled():
                 return
             exc = task.exception()
@@ -204,7 +201,7 @@ class DiscordService:
                 log.info("Stop signal received, closing Discord connection...")
                 try:
                     await asyncio.wait_for(self._bot.close(), timeout=10.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     log.warning("bot.close() timed out, forcing shutdown")
                 try:
                     # start() returns once close() completed; join to swallow
@@ -229,7 +226,7 @@ class DiscordService:
 
 
 # Singleton instance
-_discord_service: Optional[DiscordService] = None
+_discord_service: DiscordService | None = None
 
 
 def get_discord_service() -> DiscordService:

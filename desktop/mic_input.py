@@ -21,11 +21,12 @@ interrupt path takes it from there. Headset use makes this moot.
 
 from __future__ import annotations
 
+import contextlib
 import queue
 import threading
 import time
+from collections.abc import Callable
 from types import SimpleNamespace
-from typing import Callable, Optional
 
 import numpy as np
 
@@ -51,16 +52,16 @@ class MicInput:
         sink,
         owner,
         playing_fn: Callable[[], bool],
-        device: Optional[int] = None,
+        device: int | None = None,
         echo_gate: bool = True,
         barge_rms: float = 0.12,
         barge_blocks: int = 20,
-        on_barge: Optional[Callable[[], None]] = None,
+        on_barge: Callable[[], None] | None = None,
         agc: bool = False,
         agc_target: float = 0.12,
         agc_max_gain: float = 32.0,
         apm=None,
-        suppress_fn: Optional[Callable[[], bool]] = None,
+        suppress_fn: Callable[[], bool] | None = None,
     ) -> None:
         """Build a mic feed.
 
@@ -125,9 +126,9 @@ class MicInput:
         # open so unmute resumes instantly.
         self.muted = False
 
-        self._q: "queue.SimpleQueue" = queue.SimpleQueue()
-        self._stream: Optional[sd.InputStream] = None
-        self._thread: Optional[threading.Thread] = None
+        self._q: queue.SimpleQueue = queue.SimpleQueue()
+        self._stream: sd.InputStream | None = None
+        self._thread: threading.Thread | None = None
         self._started = False
         # Echo/barge state
         self._burst = 0
@@ -260,10 +261,8 @@ class MicInput:
             self._burst += 1
             if self._burst >= self.barge_blocks:
                 if self._last_loud == 0.0 and self.on_barge is not None:
-                    try:
+                    with contextlib.suppress(Exception):
                         self.on_barge()
-                    except Exception:  # noqa: BLE001
-                        pass
                 self._last_loud = time.monotonic()
                 self.sink.write(self.owner, SimpleNamespace(pcm=pcm_bytes))
                 self.stats["barge_fed"] += 1

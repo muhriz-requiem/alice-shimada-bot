@@ -22,7 +22,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import config
-import desktop.discord_service as ds
 from desktop.discord_service import DiscordService
 
 

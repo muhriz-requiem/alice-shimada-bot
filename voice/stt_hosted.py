@@ -24,12 +24,11 @@ import asyncio
 import io
 import time
 import wave
-from typing import Optional
 
 import numpy as np
 
-from bot.logging_setup import get_logger
 import config
+from bot.logging_setup import get_logger
 
 log = get_logger("voice.stt_hosted")
 
@@ -69,8 +68,8 @@ def _wav_bytes(audio: np.ndarray, sample_rate: int) -> bytes:
 async def transcribe(
     audio: np.ndarray,
     sample_rate: int = 16000,
-    language: Optional[str] = None,
-) -> Optional[dict]:
+    language: str | None = None,
+) -> dict | None:
     """
     Transcribe via Groq's hosted Whisper. Same return shape as
     voice.stt.transcribe; None on any failure (caller falls back).
@@ -114,20 +113,19 @@ async def transcribe(
             form.add_field("language", lang)
 
         timeout = aiohttp.ClientTimeout(total=10.0)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(
-                url,
-                data=form,
-                headers={"Authorization": f"Bearer {config.GROQ_API_KEY}"},
-            ) as resp:
-                if resp.status != 200:
-                    body = (await resp.text())[:200]
-                    _last_failure = time.monotonic()
-                    log.warning(
-                        f"Hosted STT HTTP {resp.status}: {body}"
-                    )
-                    return None
-                data = await resp.json(content_type=None)
+        async with aiohttp.ClientSession(timeout=timeout) as session, session.post(
+            url,
+            data=form,
+            headers={"Authorization": f"Bearer {config.GROQ_API_KEY}"},
+        ) as resp:
+            if resp.status != 200:
+                body = (await resp.text())[:200]
+                _last_failure = time.monotonic()
+                log.warning(
+                    f"Hosted STT HTTP {resp.status}: {body}"
+                )
+                return None
+            data = await resp.json(content_type=None)
 
         text = (data.get("text") or "").strip()
         if not text:

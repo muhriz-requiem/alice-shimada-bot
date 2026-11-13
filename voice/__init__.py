@@ -9,19 +9,22 @@ and conversation-aware voice interaction.
 from __future__ import annotations
 
 from voice import dave_patch
+
 dave_patch.apply()
 
-from voice.pipeline import VoicePipeline, init_pipeline
-from voice.state import VoiceSession, VoiceStateManager, TurnState, voice_state
-from voice.sink import AliceVoiceSink, AudioBuffer, SimpleSink
-from voice.conversation import ConversationTracker, Utterance
-from voice.turn_detector import TurnDetector, TurnState as DetectorTurnState
-from voice.response import ResponseDecisionEngine, ResponseDecision
 from voice.backchannel import BackchannelGenerator
+from voice.conversation import ConversationTracker, Utterance
 from voice.mixer import VoiceMixer
+from voice.pipeline import VoicePipeline, init_pipeline
+from voice.response import ResponseDecision, ResponseDecisionEngine
+from voice.sink import AliceVoiceSink, AudioBuffer, SimpleSink
+from voice.state import TurnState, VoiceSession, VoiceStateManager, voice_state
 from voice.streaming_source import StreamingAudioSource
-from voice.streaming_tts import stream_response, split_sentences
-from voice.vad import SileroVAD, preload as preload_vad, is_model_loaded as vad_loaded
+from voice.streaming_tts import split_sentences, stream_response
+from voice.turn_detector import TurnDetector
+from voice.vad import SileroVAD
+from voice.vad import is_model_loaded as vad_loaded
+from voice.vad import preload as preload_vad
 
 
 def get_voice_pipeline():

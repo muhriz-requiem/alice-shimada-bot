@@ -9,6 +9,7 @@ a response loop.
 from __future__ import annotations
 
 import pytest
+
 import voice.pipeline as pipeline
 
 

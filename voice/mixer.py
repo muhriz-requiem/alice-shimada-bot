@@ -11,12 +11,8 @@ from __future__ import annotations
 import asyncio
 import io
 import time
-from typing import Optional
-
-import numpy as np
 
 from bot.logging_setup import get_logger
-import config
 from voice.state import voice_state
 
 log = get_logger("voice.mixer")
@@ -44,12 +40,12 @@ class VoiceMixer:
     ) -> bool:
         """
         Play TTS audio to a voice channel.
-        
+
         Args:
             guild_id: Guild ID
             audio_data: WAV bytes to play
             interruptible: Whether this can be barge-in'd
-            
+
         Returns:
             True if playback completed, False if interrupted
         """
@@ -62,6 +58,7 @@ class VoiceMixer:
 
         try:
             import discord
+
             from voice.utils import find_ffmpeg
 
             vc = voice_state.get_voice_client(guild_id)
@@ -86,7 +83,7 @@ class VoiceMixer:
             try:
                 await asyncio.wait_for(done.wait(), timeout=30.0)
                 return True
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 log.warning(f"Playback timeout for guild {guild_id}")
                 vc.stop()
                 return False

@@ -7,10 +7,8 @@ in-character line. Sits on top of the configured AIClient's
 """
 from __future__ import annotations
 
-from typing import Optional
-
-from bot.logging_setup import get_logger
 import config
+from bot.logging_setup import get_logger
 
 log = get_logger("ai.vision")
 
@@ -25,7 +23,7 @@ async def glance_reply(
     channel_id: str,
     deixis: bool,
     question: str = "",
-) -> Optional[str]:
+) -> str | None:
     """One in-character comment about a screenshot, or None on failure.
 
     persona_messages: the compact voice prompt (from

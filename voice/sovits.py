@@ -16,15 +16,13 @@ import re
 import socket
 import subprocess
 import time
-from typing import Optional
 from urllib.parse import urlparse
 
 import aiohttp
 import numpy as np
-import numpy as np
 
-from bot.logging_setup import get_logger
 import config
+from bot.logging_setup import get_logger
 
 log = get_logger("voice.sovits")
 
@@ -124,9 +122,9 @@ def _pid_file() -> str:
     return os.path.join(config.VOICE_SOVITS_SERVER_DIR, "api.pid")
 
 
-def _read_pid() -> Optional[int]:
+def _read_pid() -> int | None:
     try:
-        with open(_pid_file(), "r", encoding="utf-8") as f:
+        with open(_pid_file(), encoding="utf-8") as f:
             return int(f.read().strip())
     except (OSError, ValueError):
         return None
@@ -170,7 +168,7 @@ def _spawn_server() -> int:
     env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
     log_path = os.path.join(server_dir, "api_boot.log")
-    log_fh = open(log_path, "ab")
+    log_fh = open(log_path, "ab")  # noqa: SIM115 -- lifetime = server process; the boot watchdog tails it
     try:
         proc = subprocess.Popen(
             [
@@ -345,7 +343,7 @@ def mark_down() -> None:
 
 async def generate_stream(
     text: str,
-    text_lang: Optional[str] = None,
+    text_lang: str | None = None,
 ):
     """
     Streaming synthesis via the GPT-SoVITS API (streaming_mode=1).
@@ -397,27 +395,29 @@ async def generate_stream(
     frames = 0
     try:
         timeout = aiohttp.ClientTimeout(total=config.VOICE_SOVITS_TIMEOUT)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(config.VOICE_SOVITS_URL, json=payload) as resp:
-                if resp.status != 200:
-                    body = (await resp.text())[:300]
-                    raise RuntimeError(f"API HTTP {resp.status}: {body}")
-                ctype = resp.headers.get("content-type", "")
-                if ctype.startswith("application/json"):
-                    body = (await resp.text())[:300]
-                    raise RuntimeError(f"API returned JSON error: {body}")
-                async for chunk in resp.content.iter_chunked(8192):
-                    for audio in parser.feed(chunk):
-                        frames += len(audio)
-                        yield audio
-                for audio in parser.flush():
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.post(config.VOICE_SOVITS_URL, json=payload) as resp,
+        ):
+            if resp.status != 200:
+                body = (await resp.text())[:300]
+                raise RuntimeError(f"API HTTP {resp.status}: {body}")
+            ctype = resp.headers.get("content-type", "")
+            if ctype.startswith("application/json"):
+                body = (await resp.text())[:300]
+                raise RuntimeError(f"API returned JSON error: {body}")
+            async for chunk in resp.content.iter_chunked(8192):
+                for audio in parser.feed(chunk):
                     frames += len(audio)
                     yield audio
+            for audio in parser.flush():
+                frames += len(audio)
+                yield audio
 
-        if frames * 4 < _MIN_AUDIO_BYTES and not frames:
-            # Nothing usable came out; force the caller's fallback.
-            raise RuntimeError("GPT-SoVITS stream produced no audio")
-    except asyncio.TimeoutError:
+            if frames * 4 < _MIN_AUDIO_BYTES and not frames:
+                # Nothing usable came out; force the caller's fallback.
+                raise RuntimeError("GPT-SoVITS stream produced no audio")
+    except TimeoutError:
         mark_down()
         raise RuntimeError(
             f"GPT-SoVITS stream timed out after {config.VOICE_SOVITS_TIMEOUT:.0f}s"
@@ -452,7 +452,7 @@ class _WavStreamParser:
     def _bytes_per_frame(self) -> int:
         return self._channels * (self._bits // 8)
 
-    def _to_float(self, pcm: bytes) -> "list[np.ndarray]":
+    def _to_float(self, pcm: bytes) -> list[np.ndarray]:
         if not pcm:
             return []
         if self._bits == 32:
@@ -504,7 +504,7 @@ class _WavStreamParser:
         return False
 
     # --- byte ingestion -------------------------------------------------
-    def feed(self, data: bytes) -> "list[np.ndarray]":
+    def feed(self, data: bytes) -> list[np.ndarray]:
         if not data:
             return []
         if self._data_start is None:
@@ -516,12 +516,12 @@ class _WavStreamParser:
             self._buf.extend(data)
         return self._drain()
 
-    def flush(self) -> "list[np.ndarray]":
+    def flush(self) -> list[np.ndarray]:
         if self._data_start is None:
             return []
         return self._drain()
 
-    def _drain(self) -> "list[np.ndarray]":
+    def _drain(self) -> list[np.ndarray]:
         frame = self._bytes_per_frame()
         if frame <= 0:
             return []
@@ -547,7 +547,7 @@ async def probe() -> bool:
 
 async def generate_async(
     text: str,
-    text_lang: Optional[str] = None,
+    text_lang: str | None = None,
     _no_retry: bool = False,
 ) -> tuple[bytes, int]:
     """
@@ -592,15 +592,17 @@ async def generate_async(
     )
     try:
         timeout = aiohttp.ClientTimeout(total=total)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(config.VOICE_SOVITS_URL, json=payload) as resp:
-                if resp.status != 200:
-                    body = (await resp.text())[:300]
-                    raise RuntimeError(f"API HTTP {resp.status}: {body}")
-                data = await resp.read()
-        if len(data) < _MIN_AUDIO_BYTES:
-            raise RuntimeError(f"API returned {len(data)} bytes")
-    except asyncio.TimeoutError:
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.post(config.VOICE_SOVITS_URL, json=payload) as resp,
+        ):
+            if resp.status != 200:
+                body = (await resp.text())[:300]
+                raise RuntimeError(f"API HTTP {resp.status}: {body}")
+            data = await resp.read()
+            if len(data) < _MIN_AUDIO_BYTES:
+                raise RuntimeError(f"API returned {len(data)} bytes")
+    except TimeoutError:
         mark_down()
         raise RuntimeError(f"GPT-SoVITS timed out after {total:.0f}s") from None
     except Exception:

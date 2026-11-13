@@ -17,12 +17,11 @@ import ctypes.wintypes
 import io
 import time
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 
-from bot.logging_setup import get_logger
 import config
+from bot.logging_setup import get_logger
 
 log = get_logger("desktop.screen_watch")
 
@@ -68,7 +67,7 @@ def denylisted(title: str) -> bool:
     return False
 
 
-def _capture_image(monitor_override: Optional[str] = None):
+def _capture_image(monitor_override: str | None = None):
     """PIL Image of the configured monitor (primary by default)."""
     from PIL import ImageGrab
 
@@ -112,7 +111,7 @@ def _downscale_jpeg(img, max_width: int, quality: int) -> tuple[bytes, int, int]
     return buf.getvalue(), img.size[0], img.size[1]
 
 
-def capture(monitor_override: Optional[str] = None) -> Optional[GlanceFrame]:
+def capture(monitor_override: str | None = None) -> GlanceFrame | None:
     """One privacy-checked screenshot, or None when refused/off."""
     if not (config.SCREEN_LOOK_ENABLED or config.SCREEN_LOOK_AMBIENT):
         return None
@@ -131,7 +130,7 @@ def capture(monitor_override: Optional[str] = None) -> Optional[GlanceFrame]:
     return GlanceFrame(jpeg=jpeg, width=w, height=h, title=title, taken_at=time.time())
 
 
-def change_fraction(prev: Optional[np.ndarray], cur: Optional[np.ndarray]) -> float:
+def change_fraction(prev: np.ndarray | None, cur: np.ndarray | None) -> float:
     """Fraction of meaningfully-changed pixels between two thumbnails.
 
     Both inputs are float32 grayscale arrays of the same shape; 0.0

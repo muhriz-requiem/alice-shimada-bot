@@ -16,10 +16,9 @@ import pytest
 
 import config
 import voice.lip_sync as lip_sync
-import voice.readiness
 import voice.sovits as sovits
-import voice.tts as tts
 import voice.streaming_tts as streaming_tts
+import voice.tts as tts
 
 
 class _FakeSource:

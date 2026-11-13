@@ -9,11 +9,11 @@ app brings the avatar up, quitting takes it down.
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 import threading
 import time
-from typing import Optional
 
 from bot.logging_setup import get_logger
 
@@ -43,16 +43,16 @@ def _engine_process_running() -> bool:
 
 
 class MateEngineManager:
-    def __init__(self, exe_path: Optional[str] = None,
+    def __init__(self, exe_path: str | None = None,
                  boot_wait: float = BOOT_WAIT):
         self.exe_path = exe_path or os.environ.get("MATE_ENGINE_EXE", DEFAULT_EXE)
         self.boot_wait = boot_wait
-        self._proc: Optional[subprocess.Popen] = None
+        self._proc: subprocess.Popen | None = None
         self._owned = False  # True only if WE launched it
         self._status = "not started"
         self._lock = threading.Lock()
-        self._thread: Optional[threading.Thread] = None
-        self._health_thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
+        self._health_thread: threading.Thread | None = None
         self._health_stop = threading.Event()
 
     # -- public API --------------------------------------------------------
@@ -88,10 +88,8 @@ class MateEngineManager:
                 proc.terminate()
                 proc.wait(timeout=10)
             except Exception:  # noqa: BLE001
-                try:
+                with contextlib.suppress(Exception):
                     proc.kill()
-                except Exception:  # noqa: BLE001
-                    pass
         with self._lock:
             self._proc = None
             self._owned = False
@@ -176,10 +174,8 @@ class MateEngineManager:
                     return br
             except Exception:  # noqa: BLE001
                 pass
-            try:
+            with contextlib.suppress(Exception):
                 br.close()
-            except Exception:  # noqa: BLE001
-                pass
             remaining = deadline - time.monotonic()
             log.info(
                 "Waiting for MateEngine bridge... (%.0fs left)",
@@ -204,10 +200,8 @@ class MateEngineManager:
                 br = MateBridge()
                 if br.connect():
                     br.take_over_face()
-                    try:
+                    with contextlib.suppress(Exception):
                         br.clear_mouth()
-                    except Exception:  # noqa: BLE001
-                        pass
                     return True
             except Exception:  # noqa: BLE001
                 pass
@@ -219,7 +213,8 @@ class MateEngineManager:
             from desktop.mate_bridge import MateBridge
         except Exception:
             try:
-                import sys, os
+                import os
+                import sys
                 here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                 if here not in sys.path:
                     sys.path.insert(0, here)
@@ -246,10 +241,8 @@ class MateEngineManager:
                         self._status = "ready"
                         try:
                             br.take_over_face()
-                            try:
+                            with contextlib.suppress(Exception):
                                 br.clear_mouth()
-                            except Exception:  # noqa: BLE001
-                                pass
                         except Exception:  # noqa: BLE001
                             pass
                 else:

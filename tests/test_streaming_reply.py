@@ -10,8 +10,8 @@ import asyncio
 import time
 from types import SimpleNamespace
 
-from ai.postprocess import clean_stream_sentence, clean_response, find_hard_cut
 from ai.groq_client import ChatStream
+from ai.postprocess import clean_response, clean_stream_sentence, find_hard_cut
 
 
 class TestCleanStreamSentence:

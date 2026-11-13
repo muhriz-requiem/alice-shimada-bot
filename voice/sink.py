@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import collections
 import time
-from typing import Optional, Callable
+from collections.abc import Callable
 
 import numpy as np
 from discord.ext import voice_recv
 
-from bot.logging_setup import get_logger
 import config
+from bot.logging_setup import get_logger
 from voice.vad import SileroVAD
 
 log = get_logger("voice.sink")
@@ -55,7 +55,7 @@ class AudioBuffer:
             old = self._buffer.popleft()
             self._total_samples -= len(old)
 
-    def get_and_clear(self) -> Optional[np.ndarray]:
+    def get_and_clear(self) -> np.ndarray | None:
         """Get all buffered audio and clear the buffer."""
         if not self._buffer:
             return None
@@ -70,7 +70,7 @@ class AudioBuffer:
         """Get current buffer duration in seconds."""
         return self._total_samples / self.sample_rate
 
-    def get_snapshot(self) -> tuple[Optional[np.ndarray], int]:
+    def get_snapshot(self) -> tuple[np.ndarray | None, int]:
         """Copy the buffered audio without clearing the buffer.
 
         Used by predictive STT: the decode runs on this frozen copy while
@@ -105,10 +105,10 @@ class AudioBuffer:
 class AliceVoiceSink(voice_recv.AudioSink):
     """
     Audio sink that receives Discord voice audio and buffers it per-user.
-    
+
     Integrates with discord-ext-voice-recv's AudioSink API to properly
     receive and decode audio from Discord voice channels.
-    
+
     Audio flow:
     1. Discord sends Opus packets -> voice_recv decodes to PCM
     2. write() receives PCM float32 samples per user
@@ -135,7 +135,7 @@ class AliceVoiceSink(voice_recv.AudioSink):
     def write(self, user, data: voice_recv.VoiceData) -> None:
         """
         Called by voice_recv for each audio packet received.
-        
+
         Args:
             user: The User/Member who sent the audio (or None).
             data: VoiceData containing pcm_data (np.ndarray of float32).
@@ -184,10 +184,7 @@ class AliceVoiceSink(voice_recv.AudioSink):
         if len(pcm) > 0:
             # Simple downsample for VAD: take every 3rd sample (48k -> 16k)
             pcm_16k = pcm[::3][:512]  # Silero expects exactly 512 samples
-            if len(pcm_16k) > 0:
-                has_speech = vad.is_speech(pcm_16k)
-            else:
-                has_speech = False
+            has_speech = vad.is_speech(pcm_16k) if len(pcm_16k) > 0 else False
         else:
             has_speech = False
 
@@ -248,12 +245,9 @@ class AliceVoiceSink(voice_recv.AudioSink):
             return True
 
         # Check if we've hit max duration
-        if buf.get_duration() >= self._max_speech:
-            return True
+        return buf.get_duration() >= self._max_speech
 
-        return False
-
-    def observation(self, user_id: int) -> Optional[dict]:
+    def observation(self, user_id: int) -> dict | None:
         """Live-mode predictive STT candidate check.
 
         Returns {silence_duration, buffer_duration, revision, min_speech} for a
@@ -275,7 +269,7 @@ class AliceVoiceSink(voice_recv.AudioSink):
             "revision": buf.revision,
         }
 
-    def snapshot_audio(self, user_id: int) -> Optional[tuple[np.ndarray, int]]:
+    def snapshot_audio(self, user_id: int) -> tuple[np.ndarray, int] | None:
         """Buffer copy for a predictive decode: (audio, revision)."""
         buf = self.buffers.get(user_id)
         if buf is None:
@@ -285,12 +279,12 @@ class AliceVoiceSink(voice_recv.AudioSink):
             return None
         return audio, revision
 
-    def get_revision(self, user_id: int) -> Optional[int]:
+    def get_revision(self, user_id: int) -> int | None:
         """Current buffer revision for a user (None without a buffer)."""
         buf = self.buffers.get(user_id)
         return buf.revision if buf else None
 
-    def get_audio(self, user_id: int) -> Optional[np.ndarray]:
+    def get_audio(self, user_id: int) -> np.ndarray | None:
         """Get buffered audio for a user and clear the buffer."""
         if user_id not in self.buffers:
             return None

@@ -11,11 +11,11 @@ import asyncio
 import numpy as np
 
 from voice.backchannel import (
+    _MAX_BANKED_SECONDS,
     ACK_EN,
     ACK_JA,
     BACKCHANNELS_JA,
     BackchannelBank,
-    _MAX_BANKED_SECONDS,
 )
 
 
@@ -107,10 +107,7 @@ class TestBankConstruction:
 
         def behavior(phrase: str):
             calls.append(phrase)
-            if phrase == ACK_JA[0]:
-                wav = _wav_bytes_for(long_audio)
-            else:
-                wav = _wav_bytes_for(short_audio)
+            wav = _wav_bytes_for(long_audio) if phrase == ACK_JA[0] else _wav_bytes_for(short_audio)
             return (wav, 16000, "edge")
 
         _patch_tts(monkeypatch, behavior)

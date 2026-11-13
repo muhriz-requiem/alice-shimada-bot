@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Patch Alice.vrm offline (GLB rebuild; original untouched).
 
 v7 fixes on top of the deployed v6 build's known defects:
@@ -31,13 +30,13 @@ DST : D:\\Temp\\opencode\\Alice_patched.vrm
 """
 import json
 import os
+import os as _os
 import re
 import struct
 
 import numpy as np
 from PIL import Image
 
-import os as _os
 SRC = _os.environ.get("MATE_VRM_SRC", r"D:\Temp\opencode\Alice_original.vrm")
 DST = _os.environ.get("MATE_VRM_DST", r"D:\Temp\opencode\Alice_patched.vrm")
 IMGD = _os.environ.get("MATE_VRM_IMGS", r"D:\Temp\opencode\imgs")
@@ -404,8 +403,6 @@ def main():
             trace_verts[int(pi_s)] = {int(x) for x in vs.split(",") if x}
 
     # ---- process body skin FIRST so cloth prims can copy its weights ------
-    skin_final = None      # (positions, J(n,4), W(n,4))
-    prim_info = []
 
     def process_prim(pi, prim, jmap_used, copy_from, copy_band=None,
                      no_arm=False, alt_copy=None, gate_arm=False):

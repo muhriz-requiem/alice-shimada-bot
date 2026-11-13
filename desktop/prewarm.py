@@ -30,7 +30,6 @@ import asyncio
 import os
 import threading
 import time
-from typing import Optional
 
 from bot.logging_setup import get_logger
 
@@ -65,8 +64,8 @@ def start_prewarm() -> bool:
 
 
 def _run() -> None:
-    from desktop.boot_timeline import boot_timeline
     import config
+    from desktop.boot_timeline import boot_timeline
 
     timeline = boot_timeline
     timeline.mark("prewarm_start")
@@ -75,7 +74,7 @@ def _run() -> None:
     _preload_vad(timeline)
 
     # --- 2. GPT-SoVITS server --------------------------------------------
-    sovits_ok: Optional[bool] = None
+    sovits_ok: bool | None = None
     if config.VOICE_TTS_ENGINE == "sovits":
         sovits_ok = _boot_sovits(timeline)
     else:

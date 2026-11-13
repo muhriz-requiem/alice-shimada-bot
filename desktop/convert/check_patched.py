@@ -1,15 +1,14 @@
-# -*- coding: utf-8 -*-
 """Clean, offset-safe final check of Alice_patched.vrm.
 
 Prints per-prim top humanoid/non-hu joint usage (names escaped), plus
 overall non-humanoid weight ratio. Uses the exact GLB chunk layout.
 """
 import json
+import os as _os
 import struct
 
 import numpy as np
 
-import os as _os
 PATH = _os.environ.get("MATE_VRM_CHECK", r"D:\Temp\opencode\Alice_patched.vrm")
 
 
@@ -58,7 +57,7 @@ def main():
           if isinstance(e, dict) and isinstance(e.get("node"), int)}
     hu_nodes = set(hm)
     node_to_joint = {ni: ji for ji, ni in enumerate(joints)}
-    hu_joints = set(node_to_joint[n] for n in hu_nodes if n in node_to_joint)
+    hu_joints = {node_to_joint[n] for n in hu_nodes if n in node_to_joint}
 
     tex_src = [t.get("source", -1) for t in gltf.get("textures", [])]
     mats = gltf.get("materials", [])
@@ -74,9 +73,9 @@ def main():
             m = mats[prim["material"]]
             bt = (m.get("pbrMetallicRoughness") or {}).get(
                 "baseColorTexture")
-            tex = ("<%s>" % tex_src[bt["index"]] if bt else "NO-TEX")
+            tex = (f"<{tex_src[bt['index']]}>" if bt else "NO-TEX")
         if "JOINTS_0" not in attrs:
-            print("prim %2d mat=%-26s tex=%-6s NO-SKIN" % (pi, esc(mat), tex))
+            print(f"prim {pi:2d} mat={esc(mat):<26} tex={tex:<6} NO-SKIN")
             continue
         J, _ = read(gltf, blob, attrs["JOINTS_0"])
         W, wacc = read(gltf, blob, attrs["WEIGHTS_0"])
@@ -94,13 +93,12 @@ def main():
         names = []
         for j, w in order[:6]:
             ni = joints[j]
-            names.append("%s(%.0f%s)" % (
-                esc(nodes[ni].get("name", "?")), w,
-                ",hu" if j in hu_joints else ",??"))
-        print("prim %2d mat=%-26s tex=%-6s verts=%4d wsum=%.3f %s" % (
-            pi, esc(mat), tex, J.shape[0], cnt_top_sum := sum(
-                v2 for _, v2 in order[:6]), " ".join(names)))
-    print("non-humanoid weight ratio: %.5f" % (bad / max(total, 1e-9)))
+            tail = ",hu" if j in hu_joints else ",??"
+            names.append(f"{esc(nodes[ni].get('name', '?'))}({w:.0f}{tail})")
+        wsum = sum(v2 for _, v2 in order[:6])
+        print(f"prim {pi:2d} mat={esc(mat):<26} tex={tex:<6} verts={J.shape[0]:4d} "
+              f"wsum={wsum:.3f} {' '.join(names)}")
+    print(f"non-humanoid weight ratio: {bad / max(total, 1e-9):.5f}")
 
 
 if __name__ == "__main__":

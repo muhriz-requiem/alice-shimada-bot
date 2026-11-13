@@ -16,10 +16,9 @@ from __future__ import annotations
 import asyncio
 import time
 from collections import deque
-from typing import Optional
 
-from bot.logging_setup import get_logger
 import config
+from bot.logging_setup import get_logger
 
 log = get_logger("desktop.look_service")
 
@@ -29,14 +28,14 @@ class LookService:
         self._pipeline = pipeline
         self._bridge = mate_bridge
         self._allowed = False  # tray permission (default: never capture)
-        self._last_thumb: Optional[object] = None
+        self._last_thumb: object | None = None
         self._last_glance_at = 0.0
         self._hour_stamps: deque[float] = deque()
         # Separate task slots: the ambient loop must never block a tray
         # "Look now" (they used to share one slot, which silently killed
         # the tray item whenever ambient was running).
-        self._explicit_task: Optional[asyncio.Task] = None
-        self._ambient_task: Optional[asyncio.Task] = None
+        self._explicit_task: asyncio.Task | None = None
+        self._ambient_task: asyncio.Task | None = None
         self._stop = asyncio.Event()
         # The pipeline speaks glances through these hooks.
         pipeline.screen_look_provider = self._provide_frame
@@ -54,7 +53,7 @@ class LookService:
         config.SCREEN_LOOK_ENABLED = self._allowed
         log.info(f"Screen glances allowed: {self._allowed}")
 
-    def look_now_async(self, monitor: Optional[str] = None) -> None:
+    def look_now_async(self, monitor: str | None = None) -> None:
         """Tray menu item: one immediate on-demand glance."""
         if self._explicit_task is None or self._explicit_task.done():
             self._explicit_task = asyncio.get_running_loop().create_task(
@@ -62,7 +61,7 @@ class LookService:
             )
 
     # --- provider (called from the pipeline, voice turn context) --------
-    async def _provide_frame(self, monitor: Optional[str] = None):
+    async def _provide_frame(self, monitor: str | None = None):
         if not self._allowed:
             return None
         from desktop import screen_watch
@@ -89,7 +88,7 @@ class LookService:
             log.debug(f"expression touch failed: {e}")
 
     # --- explicit glance (tray-triggered / "second screen" asks) ----------
-    async def _explicit_glance(self, monitor: Optional[str] = None) -> None:
+    async def _explicit_glance(self, monitor: str | None = None) -> None:
         from desktop import screen_watch
         from metrics import record_glance
 
@@ -105,8 +104,9 @@ class LookService:
             return
         # Ambient thumbs track the screen the owner actually saw.
         try:
-            from PIL import ImageGrab
             import io as _io
+
+            from PIL import ImageGrab
             self._last_thumb = screen_watch.thumbnail(
                 ImageGrab.open(_io.BytesIO(frame.jpeg))
             )
@@ -124,7 +124,7 @@ class LookService:
             record_glance("failed")
 
     # --- shared comment path (explicit + ambient) -------------------------
-    async def _make_comment(self, frame, *, deixis: bool, question: str) -> Optional[str]:
+    async def _make_comment(self, frame, *, deixis: bool, question: str) -> str | None:
         from ai import vision as _vision
         from character import prompt_builder
 
@@ -189,7 +189,6 @@ class LookService:
                 if not self._ambient_eligible():
                     continue
                 # Capture + change check (cheap; RAM only)
-                from PIL import ImageGrab
                 img = await asyncio.to_thread(screen_watch._capture_image)
                 if screen_watch.denylisted(screen_watch.foreground_title()):
                     continue

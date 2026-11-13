@@ -8,12 +8,10 @@ import queue
 import threading
 
 import numpy as np
-import pytest
 
 import voice.readiness
-from voice.streaming_source import StreamingAudioSource
 from voice import streaming_tts
-
+from voice.streaming_source import StreamingAudioSource
 
 # --- worker sentence merge ---------------------------------------------------
 
@@ -84,7 +82,6 @@ def _stereo_frame(amplitude: int, n: int = 960) -> bytes:
 
 
 def test_sdoutput_preroll_holds_then_releases():
-    from desktop.local_client import FRAME_SIZE
 
     out = _make_output(preroll_samples=12000)  # 250ms @ 48kHz
     outdata = np.zeros((480, 1), dtype=np.float32)

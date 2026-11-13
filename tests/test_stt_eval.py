@@ -9,11 +9,9 @@ Model loading/transcription is exercised live, not here.
 
 from __future__ import annotations
 
-import csv
 import json
 
 import numpy as np
-import pytest
 import scipy.io.wavfile as wavfile
 
 import stt_eval

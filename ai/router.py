@@ -45,7 +45,4 @@ def is_fast_path(text: str) -> bool:
 
     # Very short messages with no question mark are usually small talk.
     word_count = len(stripped.split())
-    if word_count <= 3 and "?" not in text:
-        return True
-
-    return False
+    return bool(word_count <= 3 and "?" not in text)

@@ -12,7 +12,6 @@ import collections
 import io
 import threading
 import time
-from typing import Optional
 
 import numpy as np
 
@@ -28,6 +27,7 @@ BYTES_PER_FRAME = FRAME_SIZE * CHANNELS * 2  # 16-bit stereo
 
 
 import discord
+
 
 class StreamingAudioSource(discord.AudioSource):
     """
@@ -64,7 +64,7 @@ class StreamingAudioSource(discord.AudioSource):
         """We send raw PCM, not Opus (discord.AudioSource API)."""
         return False
 
-    def read(self) -> Optional[bytes]:
+    def read(self) -> bytes | None:
         """
         Read the next 20ms frame for Discord.
         Called by discord.py's voice client in a loop.
@@ -206,6 +206,7 @@ def _wav_bytes_to_float(wav_bytes: bytes) -> np.ndarray:
 def _mp3_to_float(mp3_bytes: bytes) -> np.ndarray:
     """Convert MP3 bytes to float32 numpy array via ffmpeg."""
     import subprocess
+
     from voice.utils import find_ffmpeg
     ffmpeg = find_ffmpeg()
     if not ffmpeg:

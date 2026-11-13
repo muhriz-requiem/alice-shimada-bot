@@ -20,7 +20,6 @@ from __future__ import annotations
 import os
 import threading
 import time
-from typing import List, Optional, Tuple
 
 from bot.logging_setup import get_logger
 
@@ -36,10 +35,10 @@ class BootTimeline:
 
     def __init__(self) -> None:
         self._t0 = time.perf_counter()
-        self._marks: List[Tuple[str, float]] = []
+        self._marks: list[tuple[str, float]] = []
         self._lock = threading.Lock()
 
-    def mark(self, label: str) -> Optional[float]:
+    def mark(self, label: str) -> float | None:
         """Record `label` at boot-relative now (first occurrence only)."""
         if not _ENABLED:
             return None
@@ -52,10 +51,10 @@ class BootTimeline:
         log.info("boot: %-24s @ %7.2fs", label, offset)
         return offset
 
-    def span(self, start_label: str, end_label: str) -> Optional[float]:
+    def span(self, start_label: str, end_label: str) -> float | None:
         """Seconds between the first-seen of two labels, if both exist."""
         with self._lock:
-            first = {label: off for label, off in self._marks}
+            first = dict(self._marks)
         if start_label in first and end_label in first:
             return first[end_label] - first[start_label]
         return None

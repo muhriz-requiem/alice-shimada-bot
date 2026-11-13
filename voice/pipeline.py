@@ -15,41 +15,42 @@ import threading
 import time
 from collections import deque
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import scipy.signal
 
-from bot.logging_setup import get_logger
 import config
+from bot.logging_setup import get_logger
 from character import prompt_builder
 from memory import store as memory_store
-from social.identities import get_identity_async
 from metrics import (
+    record_glance,
     record_voice_predictive,
     record_voice_reply,
     record_voice_stage,
     record_voice_stt_filtered,
-    record_glance,
 )
+from social.identities import get_identity_async
 from voice import rvc, stt, tts
+from voice.backchannel import BackchannelBank, BackchannelGenerator
+
 # NOTE (cold-start): the pyannote import used to be module-level here,
 # which made `import voice.pipeline` pay pyannote.audio's whole import
 # chain (speechbrain/lightning) in EVERY construction -- the single
 # biggest "Companion: booting..." cost, paid even when diarization is
 # off (desktop default). It is lazy now: see _get_diarize_fn().
 from voice.conversation import ConversationTracker
-from voice.turn_detector import TurnDetector, TurnState
-from voice.response import ResponseDecisionEngine, ResponseDecision
-from voice.backchannel import BackchannelGenerator, BackchannelBank
 from voice.mixer import VoiceMixer
+from voice.response import ResponseDecision, ResponseDecisionEngine
 from voice.sink import AliceVoiceSink
-from voice.state import voice_state, TurnState as StateTurnState
+from voice.state import TurnState as StateTurnState
+from voice.state import voice_state
 from voice.streaming_source import StreamingAudioSource
 from voice.streaming_tts import (
     stream_response,
     stream_response_deltas,
 )
+from voice.turn_detector import TurnDetector, TurnState
 
 log = get_logger("voice.pipeline")
 
@@ -84,10 +85,10 @@ def _is_clean_direct_address(text: str) -> bool:
     text_l = text.lower()
     mention_kws = [kw.lower() for kw in getattr(
         config, "VOICE_MENTION_KEYWORDS", ["alice"]) if kw and kw.strip()]
-    for kw in mention_kws:
-        if text_l.startswith(kw + ",") or text_l.startswith(kw + " "):
-            return True
-    return False
+    return any(
+        text_l.startswith(kw + ",") or text_l.startswith(kw + " ")
+        for kw in mention_kws
+    )
 
 
 def _is_stt_hallucination(text: str, audio_dur: float) -> bool:
@@ -153,9 +154,8 @@ def _is_stt_hallucination(text: str, audio_dur: float) -> bool:
         phrase = rest.split(".")[0].strip()
         # An empty phrase means the keyword was the last thing in the text
         # (a standalone vocative, e.g. "Alice? Alice? Alice,"), count it.
-        if phrase and len(phrase.split()) <= 6:
-            addr_hits += 1
-        elif phrase == "" and rest.strip() == "":
+        if (phrase and len(phrase.split()) <= 6) or (
+                phrase == "" and rest.strip() == ""):
             addr_hits += 1
     if addr_hits >= 2:
         return True
@@ -166,10 +166,7 @@ def _is_stt_hallucination(text: str, audio_dur: float) -> bool:
         r"(?:^|\s)(?:uh|um|mm|hmm|ah|ahh)\s*(?:$|\s)", " ", normalized
     )
     content_words = [w for w in cleaned.split() if w and len(w) > 2]
-    if len(content_words) < 2 and audio_dur >= 2.5:
-        return True
-
-    return False
+    return bool(len(content_words) < 2 and audio_dur >= 2.5)
 
 
 _capture_counter = 0
@@ -255,7 +252,7 @@ def _get_diarize_fn():
 class VoicePipeline:
     """
     End-to-end voice processing pipeline with conversation awareness.
-    
+
     Flow:
     1. Receive audio from Discord (via AliceVoiceSink)
     2. VAD + buffering in sink (sample-based timing)
@@ -328,8 +325,8 @@ class VoicePipeline:
         self._last_vitals: float = 0.0
 
     def _record_stage(
-        self, guild_id: int, stage: str, seconds: Optional[float],
-        ttfa: Optional[float] = None,
+        self, guild_id: int, stage: str, seconds: float | None,
+        ttfa: float | None = None,
     ) -> None:
         """Record a pipeline stage duration (metrics + rolling per-guild).
 
@@ -345,8 +342,8 @@ class VoicePipeline:
         dq.append(seconds)
 
     def _stage_p50(
-        self, guild_id: int, stage: str, default: Optional[float] = None
-    ) -> Optional[float]:
+        self, guild_id: int, stage: str, default: float | None = None
+    ) -> float | None:
         """Median of the last observations for one stage (or default)."""
         dq = self._stage_times.get(guild_id, {}).get(stage)
         if not dq:
@@ -364,8 +361,8 @@ class VoicePipeline:
         self,
         guild_id: int,
         user_id: int,
-        silence: Optional[float] = None,
-        audio: Optional[np.ndarray] = None,
+        silence: float | None = None,
+        audio: np.ndarray | None = None,
     ) -> None:
         """Process completed speech segment with conversation awareness.
 
@@ -576,7 +573,7 @@ class VoicePipeline:
             entry = self._pred_stt.get(key)
             if entry is not None and entry.get("revision") == revision:
                 entry["result"] = result
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # Wedged decode (e.g. CUDA hung under VRAM pressure): cancel
             # the awaiter so the STT lock is released and the pipeline
             # keeps responding. The orphaned thread's result is discarded.
@@ -589,7 +586,7 @@ class VoicePipeline:
 
     async def _claim_predictive(
         self, guild_id: int, user_id: int
-    ) -> tuple[Optional[dict], str]:
+    ) -> tuple[dict | None, str]:
         """Collect the predictive decode at the turn-end gate.
 
         Awaiting the in-flight decode is strictly cheaper than decoding
@@ -635,7 +632,7 @@ class VoicePipeline:
             return None, "stale"
         return result, "hit"
 
-    def _maybe_start_ack(self, guild_id: int, language: str) -> Optional[asyncio.Task]:
+    def _maybe_start_ack(self, guild_id: int, language: str) -> asyncio.Task | None:
         """Live mode: speak a banked "Hm?" while the reply generates.
 
         Fires only when past replay latencies predict the real reply's
@@ -693,19 +690,19 @@ class VoicePipeline:
         channel_id: str,
         text: str,
         look_kind: str,
-        monitor: Optional[str] = None,
+        monitor: str | None = None,
         messages: list[dict],
         identity: dict,
         relationship: str | None,
         history: list[dict],
         voice_extra: str,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Utterance-driven glance: capture -> vision -> one in-character
         line (or a fixed refusal when gated/denylisted). Returns None to
         fall through to the normal text reply (e.g. deixis with the
         feature off, or cooldown)."""
-        from voice import screen_look as sl
         from ai import vision as _vision
+        from voice import screen_look as sl
 
         now = time.monotonic()
         if now < self._look_cooldown_until.get(guild_id, 0.0):
@@ -811,8 +808,8 @@ class VoicePipeline:
     async def _generate_and_respond(
         self, guild_id: int, user_id: int, text: str, is_owner: bool,
         user_language: str = "en",
-        t_speech_end: Optional[float] = None,
-        silence: Optional[float] = None,
+        t_speech_end: float | None = None,
+        silence: float | None = None,
     ) -> None:
         """Generate AI response and stream it sentence-by-sentence.
 
@@ -912,7 +909,7 @@ class VoicePipeline:
             tt_speech_end = t_speech_end if t_speech_end is not None else None
             wait_silence = silence if silence is not None else 0.0
 
-            def _fmt(v: Optional[float]) -> str:
+            def _fmt(v: float | None) -> str:
                 return f"{v:.2f}" if v is not None else "-"
 
             # --- Screen glance (explicit look / deixis) --------------------
@@ -920,7 +917,7 @@ class VoicePipeline:
             # the reply comes from the vision path instead of the text
             # model. Refusal/gate cases return a fixed in-character line;
             # failures fall through to the normal text reply.
-            look_reply: Optional[str] = None
+            look_reply: str | None = None
             from voice import screen_look as _sl
 
             look_kind = _sl.match_look_intent(text)
@@ -948,9 +945,9 @@ class VoicePipeline:
                         voice_extra=voice_extra,
                     )
 
-            response: Optional[str] = None
+            response: str | None = None
             stream = None
-            ack_task: Optional[asyncio.Task] = None
+            ack_task: asyncio.Task | None = None
             track: dict = {}
 
             if look_reply is not None:
@@ -1020,8 +1017,8 @@ class VoicePipeline:
 
             # Play the streaming source
             vc = voice_state.get_voice_client(guild_id)
-            t_play: Optional[float] = None
-            audible: Optional[float] = None
+            t_play: float | None = None
+            audible: float | None = None
             if vc and source:
                 # Give the address-ack room to finish (bounded): both use
                 # the same voice client; overlapping play() calls raise.
@@ -1057,10 +1054,7 @@ class VoicePipeline:
                     await asyncio.sleep(0.1)
                 if vc.is_playing():
                     vc.stop()
-                if source.first_pcm_at:
-                    audible = max(t_play, source.first_pcm_at)
-                else:
-                    audible = t_play
+                audible = max(t_play, source.first_pcm_at) if source.first_pcm_at else t_play
             else:
                 # No voice client (harness/off-playback runs): first PCM
                 # is the first audio that would have been heard. Same
@@ -1151,7 +1145,7 @@ class VoicePipeline:
 
     async def _play_soft_phrase(self, guild_id: int, user_id: int, context_text: str, language: str = "en") -> None:
         """Play a short clarification phrase when Alice's name is mentioned but not directly addressed."""
-        from voice import readiness, tts, rvc, soft_phrases
+        from voice import readiness, rvc, soft_phrases, tts
 
         if not readiness.is_ready():
             log.debug("TTS not ready; dropping soft phrase")
@@ -1335,8 +1329,8 @@ class VoicePipeline:
         user_id: int,
         audio: np.ndarray,
         sample_rate: int = 48000,
-        preset_result: Optional[dict] = None,
-    ) -> Optional[tuple[str, str]]:
+        preset_result: dict | None = None,
+    ) -> tuple[str, str] | None:
         """
         Process received audio through the full pipeline.
         Returns (text, language) tuple, or None if processing failed.
@@ -1400,7 +1394,7 @@ class VoicePipeline:
                                 ),
                                 timeout=config.VOICE_STT_DECODE_TIMEOUT,
                             )
-                        except asyncio.TimeoutError:
+                        except TimeoutError:
                             log.error(
                                 f"Local STT exceeded "
                                 f"{config.VOICE_STT_DECODE_TIMEOUT}s (wedged "
@@ -1472,7 +1466,7 @@ class VoicePipeline:
         text: str,
         guild_id: int,
         mood: str = "neutral",
-    ) -> Optional[bytes]:
+    ) -> bytes | None:
         """
         Generate speech audio from text.
         1. Generate TTS audio
@@ -1650,6 +1644,7 @@ def init_pipeline(bot) -> VoicePipeline:
     # TTS settles, diarization stays lazy-loaded on first use.
     try:
         import threading as _threading
+
         from voice import diarize as _diarize
         from voice import readiness
         if config.VOICE_DIARIZE_MODE != "none":

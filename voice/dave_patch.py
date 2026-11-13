@@ -38,9 +38,8 @@ def _patch_packet_router() -> None:
     if getattr(PacketRouter, "_alice_patched", False):
         return
 
-    import threading
 
-    original_do_run = PacketRouter._do_run
+    original_do_run = PacketRouter._do_run  # noqa: F841  # captured for docs/debug; the patch replaces it wholesale
 
     def patched_do_run(self) -> None:
         errors_logged = 0

@@ -14,7 +14,6 @@ from __future__ import annotations
 import os
 
 import pytest
-
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -27,7 +26,6 @@ from desktop.app import (
     set_stt_engine,
 )
 from desktop.voice_app import CompanionSession
-
 
 # --- single instance --------------------------------------------------
 

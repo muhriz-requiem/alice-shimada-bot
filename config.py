@@ -130,10 +130,7 @@ BOT_NAME = os.getenv("BOT_NAME", "").upper()
 BASE_DIR = Path(__file__).resolve().parent
 
 # Use bot-specific subdirectories if BOT_NAME is set
-if BOT_NAME:
-    DATA_DIR = BASE_DIR / "data" / BOT_NAME.lower()
-else:
-    DATA_DIR = BASE_DIR / "data"
+DATA_DIR = BASE_DIR / "data" / BOT_NAME.lower() if BOT_NAME else BASE_DIR / "data"
 
 REDDIT_DATA_DIR = DATA_DIR / "reddit"
 MEMORY_DATA_DIR = DATA_DIR / "memory"

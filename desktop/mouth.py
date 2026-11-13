@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Mouth timeline builders.
 
 Converts (phone list | kana text, audio seconds) into mouth events
@@ -25,14 +24,14 @@ Language coverage:
 - Japanese: kana segmentation (small kana now take a small share of
   time instead of being skipped totally).
 """
-from typing import Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
 
 import numpy as np
 
 # ARPAbet (stress digit stripped) -> VRM viseme preset.
 # Diphthongs snap to their onset shape; IY uses 'ee' so the tight vowel
 # reads as distinct from 'ih'.
-VOWEL_TO_VISEME: Dict[str, str] = {
+VOWEL_TO_VISEME: dict[str, str] = {
     "AA": "aa", "AE": "aa", "AH": "aa",
     "AO": "oh", "AW": "aa", "AY": "aa",
     "EH": "ih", "ER": "ih", "EY": "ih",
@@ -42,7 +41,7 @@ VOWEL_TO_VISEME: Dict[str, str] = {
 }
 
 # relative duration weight per consonant, before global scaling
-CONSONANT_WEIGHT: Dict[str, float] = {
+CONSONANT_WEIGHT: dict[str, float] = {
     "P": 0.35, "B": 0.35, "T": 0.30, "D": 0.30,
     "K": 0.30, "G": 0.30, "JH": 0.35, "CH": 0.35,
     "S": 0.55, "Z": 0.55, "F": 0.50, "V": 0.50,
@@ -51,20 +50,20 @@ CONSONANT_WEIGHT: Dict[str, float] = {
     "M": 0.50, "N": 0.50, "NG": 0.50,
 }
 # consonants acted with a visible mouth shape (not a closed slot)
-GLIDE_VISEME: Dict[str, str] = {"W": "ou", "Y": "ih"}
+GLIDE_VISEME: dict[str, str] = {"W": "ou", "Y": "ih"}
 
 DEFAULT_CONSONANT_WEIGHT = 0.45
 
-PUNCTUATION_PAUSE: Dict[str, float] = {
+PUNCTUATION_PAUSE: dict[str, float] = {
     ",": 0.20, ".": 0.34, "!": 0.34, "?": 0.34, ";": 0.24, ":": 0.24,
     "\u3001": 0.20, "\u3002": 0.34, "\uff01": 0.34, "\uff1f": 0.34,
 }
-_STRESS_WEIGHT: Dict[int, float] = {0: 0.90, 1: 1.20, 2: 0.85}
+_STRESS_WEIGHT: dict[int, float] = {0: 0.90, 1: 1.20, 2: 0.85}
 
 # kind, preset, weight
-Slot = Tuple[str, Optional[str], float]
+Slot = tuple[str, str | None, float]
 
-Event = Tuple[Optional[str], float, float]
+Event = tuple[str | None, float, float]
 
 
 def _classify_phone(ph: str) -> Slot:
@@ -92,11 +91,11 @@ def _classify_phone(ph: str) -> Slot:
 
 
 def _resolve_pauses(classified: Sequence[Slot],
-                    pause_durations: Optional[Sequence[float]],
-                    audio_seconds: float) -> List[float]:
+                    pause_durations: Sequence[float] | None,
+                    audio_seconds: float) -> list[float]:
     """Pause length per 'pau' slot, in order; defaults for missing."""
     pauses = list(pause_durations) if pause_durations else []
-    out: List[float] = []
+    out: list[float] = []
     i = 0
     for kind, token, _w in classified:
         if kind != "pau":
@@ -117,7 +116,7 @@ def _resolve_pauses(classified: Sequence[Slot],
 
 def _assemble(classified: Sequence[Slot],
               audio_seconds: float,
-              pause_durations: Optional[Sequence[float]]) -> List[Event]:
+              pause_durations: Sequence[float] | None) -> list[Event]:
     if not classified or audio_seconds <= 0.05:
         return []
     pause_secs = _resolve_pauses(classified, pause_durations, audio_seconds)
@@ -128,7 +127,7 @@ def _assemble(classified: Sequence[Slot],
         return []
     scale = budget / body
 
-    events: List[Event] = []
+    events: list[Event] = []
     pi = 0
     for kind, preset, w in classified:
         if kind == "pau":
@@ -142,18 +141,18 @@ def _assemble(classified: Sequence[Slot],
 
 
 def build_timeline(phones: Sequence[str], audio_seconds: float,
-                   pause_durations: Optional[Sequence[float]] = None,
-) -> List[Event]:
+                   pause_durations: Sequence[float] | None = None,
+) -> list[Event]:
     """English phone list -> mouth events over `audio_seconds`."""
     classified = [_classify_phone(ph) for ph in phones]
     return _assemble(classified, audio_seconds, pause_durations)
 
 
-def _classify_kana(text: str) -> List[Slot]:
+def _classify_kana(text: str) -> list[Slot]:
     """Kana/ASCII text -> classified slots (punct slots carry tokens)."""
-    from mate_bridge import PHONEME_TO_VISEME, _KANA_SKIP
+    from mate_bridge import _KANA_SKIP, PHONEME_TO_VISEME
 
-    classified: List[Slot] = []
+    classified: list[Slot] = []
     for ch in text:
         if ch in PUNCTUATION_PAUSE:
             classified.append(("pau", ch, 0.0))
@@ -170,8 +169,8 @@ def _classify_kana(text: str) -> List[Slot]:
 
 
 def kana_timeline(text: str, audio_seconds: float,
-                  pause_durations: Optional[Sequence[float]] = None,
-) -> List[Event]:
+                  pause_durations: Sequence[float] | None = None,
+) -> list[Event]:
     """Japanese (kana) text -> mouth events over `audio_seconds`."""
     classified = _classify_kana(text)
     return _assemble(classified, audio_seconds, pause_durations)
@@ -182,7 +181,7 @@ def kana_timeline(text: str, audio_seconds: float,
 # ----------------------------------------------------------------- #
 
 def find_pauses(audio: "np.ndarray", sr: int, min_ms: float = 90.0,
-                max_ms: float = 1400.0) -> List[float]:
+                max_ms: float = 1400.0) -> list[float]:
     """Durations (s) of interior low-energy runs, ordered by time.
 
     Skips 60 ms head / 200 ms tail margins so leading/trailing room tone
@@ -204,7 +203,7 @@ def find_pauses(audio: "np.ndarray", sr: int, min_ms: float = 90.0,
     min_len = int(sr * min_ms / 1000)
     max_len = int(sr * max_ms / 1000)
 
-    durations: List[float] = []
+    durations: list[float] = []
     n = len(interior)
     i = 0
     while i < n:

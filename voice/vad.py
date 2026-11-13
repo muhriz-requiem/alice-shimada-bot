@@ -8,13 +8,13 @@ for more accurate speech/silence detection.
 
 from __future__ import annotations
 
+import contextlib
 import time
-from typing import Optional
 
 import numpy as np
 
-from bot.logging_setup import get_logger
 import config
+from bot.logging_setup import get_logger
 
 log = get_logger("voice.vad")
 
@@ -30,8 +30,7 @@ def _load_model():
         return _model
 
     try:
-        import torch
-        from silero_vad import load_silero_vad, get_speech_timestamps
+        from silero_vad import load_silero_vad
 
         # Load model (downloads on first use)
         _model = load_silero_vad(onnx=True)
@@ -54,7 +53,7 @@ def is_model_loaded() -> bool:
 class SileroVAD:
     """
     Wrapper around Silero VAD for voice activity detection.
-    
+
     Supports:
     - Chunk-based detection (16kHz, 512 samples = 32ms)
     - Rolling window for faster state transitions
@@ -182,10 +181,8 @@ class SileroVAD:
         self._speech_start = 0
         self._last_speech_at = 0
         if self._model is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._model.reset_states()
-            except Exception:
-                pass
 
     @property
     def is_available(self) -> bool:

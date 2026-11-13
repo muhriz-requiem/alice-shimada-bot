@@ -21,10 +21,8 @@ import asyncio
 import threading
 import time
 from types import SimpleNamespace
-from typing import Optional
 
 import numpy as np
-
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -32,6 +30,8 @@ load_dotenv()
 from bot.logging_setup import get_logger
 
 log = get_logger("desktop.voice_app")
+
+import contextlib
 
 import config
 from desktop.boot_timeline import boot_timeline
@@ -47,8 +47,8 @@ def build_pipeline(owner_id: int):
     """Assemble bot stub + VoicePipeline (same recipe as manage.py latency)."""
     from ai import get_ai_client
     from character import load_character
-    from voice.pipeline import VoicePipeline
     from desktop.boot_timeline import boot_timeline
+    from voice.pipeline import VoicePipeline
 
     bot = SimpleNamespace()
     bot.user = _OwnerStub(owner_id)
@@ -129,10 +129,8 @@ async def teardown(monitor_task, mic, client, sink, guild_id: int) -> None:
         mic.stop()
     if monitor_task is not None:
         monitor_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError, Exception):
             await monitor_task
-        except (asyncio.CancelledError, Exception):  # noqa: BLE001
-            pass
         log.info("Speech monitor cancelled")
         client.cleanup()
         from voice.state import voice_state
@@ -171,7 +169,7 @@ async def inject_speech(sink, owner, audio48k: np.ndarray) -> None:
 async def boot_companion(
     owner_id: int,
     guild_id: int = 0,
-    device: Optional[int] = None,
+    device: int | None = None,
     silent: bool = False,
     diarize: bool = False,
     on_barge=None,
@@ -194,6 +192,7 @@ async def boot_companion(
     is on; MicInput respects config.VOICE_DESKTOP_ECHO_GATE.
     """
     from desktop.local_client import LocalChannel, LocalVoiceClient, SilentOutput
+
     # voice_state is the VoiceStateManager INSTANCE the pipeline uses.
     from voice.state import voice_state
 
@@ -263,7 +262,7 @@ async def boot_companion(
     # Local voice client (speakers or silent) + channel having just the owner.
     factory = SilentOutput if silent else None
     channel = LocalChannel(members=[bot.user])
-    
+
     # MateEngine avatar is driven by desktop.lip_sync_subscriber (lip-sync events),
     # not RMS energy. No Qt overlay anymore.
     rms_callback = None
@@ -392,10 +391,8 @@ async def shutdown_companion(booted) -> None:
     """Mirror of boot_companion: stop everything and drain the loop."""
     look_service = getattr(booted, "look_service", None)
     if look_service is not None:
-        try:
+        with contextlib.suppress(Exception):
             await look_service.stop_ambient()
-        except Exception:  # noqa: BLE001
-            pass
     await teardown(
         booted.monitor_task, booted.mic, booted.client, booted.sink,
         booted.guild_id,
@@ -430,8 +427,8 @@ class CompanionSession:
 
     def __init__(
         self,
-        device: Optional[int] = None,
-        owner_id: Optional[int] = None,
+        device: int | None = None,
+        owner_id: int | None = None,
         guild_id: int = 0,
         silent: bool = False,
         diarize: bool = False,
@@ -445,12 +442,12 @@ class CompanionSession:
         self._on_barge = on_barge
 
         self.state = "off"
-        self.error: Optional[str] = None
+        self.error: str | None = None
         self.muted = False
 
-        self._thread: Optional[threading.Thread] = None
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._stop_evt: Optional[asyncio.Event] = None
+        self._thread: threading.Thread | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._stop_evt: asyncio.Event | None = None
         self._booted = None
         self._glance_allowed = False
 
@@ -477,10 +474,9 @@ class CompanionSession:
             return
         loop, evt = self._loop, self._stop_evt
         if loop is not None and evt is not None:
-            try:
+            with contextlib.suppress(RuntimeError):
+                # loop already closed; thread is winding down
                 loop.call_soon_threadsafe(evt.set)
-            except RuntimeError:
-                pass  # loop already closed; thread is winding down
         thread.join(timeout=120.0)
         if thread.is_alive():
             log.warning("Companion thread did not stop within join timeout")
@@ -491,7 +487,7 @@ class CompanionSession:
         if self._booted is not None and self._booted.mic is not None:
             self._booted.mic.muted = self.muted
 
-    def set_mic_device(self, device: Optional[int]) -> None:
+    def set_mic_device(self, device: int | None) -> None:
         self._device = device
         if self.state == "ready":
             was_muted = self.muted
@@ -516,10 +512,8 @@ class CompanionSession:
         loop = self._loop
         if ls is None or loop is None:
             return
-        try:
+        with contextlib.suppress(RuntimeError):
             loop.call_soon_threadsafe(ls.look_now_async)
-        except RuntimeError:
-            pass
 
     @property
     def glance_allowed(self) -> bool:
@@ -546,7 +540,7 @@ class CompanionSession:
             return "unknown"
 
     @property
-    def mic_device(self) -> Optional[int]:
+    def mic_device(self) -> int | None:
         return self._device
 
     # --- session thread --------------------------------------------------

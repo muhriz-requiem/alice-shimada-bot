@@ -8,12 +8,11 @@ when in multi-speaker audio.
 from __future__ import annotations
 
 import threading
-from typing import Optional
 
 import numpy as np
 
-from bot.logging_setup import get_logger
 import config
+from bot.logging_setup import get_logger
 
 log = get_logger("voice.diarize")
 
@@ -86,7 +85,7 @@ def _load_pipeline():
 def diarize(
     audio: np.ndarray,
     sample_rate: int = 16000,
-    num_speakers: Optional[int] = None,
+    num_speakers: int | None = None,
 ) -> list[dict]:
     """
     Perform speaker diarization on audio.
@@ -142,7 +141,7 @@ def diarize(
             })
 
         log.debug(f"Diarization found {len(segments)} segments, "
-                  f"{len(set(s['speaker'] for s in segments))} speakers")
+                  f"{len({s['speaker'] for s in segments})} speakers")
         return segments
 
     except Exception as e:

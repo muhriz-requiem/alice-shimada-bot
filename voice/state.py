@@ -10,7 +10,6 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, Union
 
 import discord
 
@@ -94,13 +93,13 @@ class VoiceStateManager:
 
     def __init__(self):
         self._sessions: dict[int, VoiceSession] = {}
-        self._voice_clients: dict[int, Union[discord.VoiceClient, object]] = {}
+        self._voice_clients: dict[int, discord.VoiceClient | object] = {}
 
     def connect(
         self,
         guild_id: int,
         channel_id: int,
-        voice_client: Union[discord.VoiceClient, object],
+        voice_client: discord.VoiceClient | object,
     ) -> VoiceSession:
         """Record a new voice connection."""
         session = VoiceSession(guild_id=guild_id, channel_id=channel_id)
@@ -109,7 +108,7 @@ class VoiceStateManager:
         log.info(f"Voice connected: guild={guild_id}, channel={channel_id}")
         return session
 
-    def disconnect(self, guild_id: int) -> Optional[VoiceSession]:
+    def disconnect(self, guild_id: int) -> VoiceSession | None:
         """Record a voice disconnection."""
         session = self._sessions.pop(guild_id, None)
         self._voice_clients.pop(guild_id, None)
@@ -121,7 +120,7 @@ class VoiceStateManager:
             )
         return session
 
-    def get_session(self, guild_id: int) -> Optional[VoiceSession]:
+    def get_session(self, guild_id: int) -> VoiceSession | None:
         """Get the active voice session for a guild."""
         return self._sessions.get(guild_id)
 
