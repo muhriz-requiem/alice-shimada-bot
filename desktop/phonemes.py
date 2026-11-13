@@ -15,7 +15,7 @@ import threading
 try:  # repo-relative config (worker exe comes from the SoVITS settings)
     import config
 except Exception:  # pragma: no cover - standalone use
-    config = None
+    config = None  # type: ignore[assignment]
 
 log = __import__("logging").getLogger("desktop.phonemes")
 

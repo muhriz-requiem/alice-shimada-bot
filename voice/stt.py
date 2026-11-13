@@ -19,6 +19,7 @@ import os
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -135,10 +136,15 @@ def _get_moonshine(lang: str):
     # model config's declared architectures so both load through one path.
     cfg = AutoConfig.from_pretrained(model_id)
     arch = getattr(cfg, "architectures", [None])[0] or ""
+    ModelCls: Any
     if "Streaming" in arch:
-        from transformers import MoonshineStreamingForConditionalGeneration as ModelCls
+        from transformers import (
+            MoonshineStreamingForConditionalGeneration as _ModelStreaming,
+        )
+        ModelCls = _ModelStreaming
     else:
-        from transformers import MoonshineForConditionalGeneration as ModelCls
+        from transformers import MoonshineForConditionalGeneration as _ModelBase
+        ModelCls = _ModelBase
 
     log.info(f"Loading Moonshine model: {model_id} (lang={lang}, device={device}, dtype={dtype})")
     model = ModelCls.from_pretrained(model_id)

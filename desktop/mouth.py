@@ -150,7 +150,7 @@ def build_timeline(phones: Sequence[str], audio_seconds: float,
 
 def _classify_kana(text: str) -> list[Slot]:
     """Kana/ASCII text -> classified slots (punct slots carry tokens)."""
-    from mate_bridge import _KANA_SKIP, PHONEME_TO_VISEME
+    from mate_bridge import _KANA_SKIP, PHONEME_TO_VISEME  # type: ignore[import-not-found]
 
     classified: list[Slot] = []
     for ch in text:

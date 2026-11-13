@@ -25,7 +25,7 @@ log = get_logger("desktop.lip_sync_subscriber")
 try:
     import config
 except Exception:  # noqa: BLE001
-    config = None
+    config = None  # type: ignore[assignment]
 
 
 def _is_japanese(text: str) -> bool:
@@ -111,13 +111,13 @@ class LipSyncSubscriber:
             sys.path.insert(0, here)
         # Lazy imports (desktop-side modules)
         try:
-            from desktop import mouth
+            from desktop import mouth  # type: ignore[no-redef]
         except Exception:  # noqa: BLE001
             try:
-                import mouth
+                import mouth  # type: ignore[import-not-found,no-redef]
             except Exception as exc:  # noqa: BLE001
                 log.warning("mouth module unavailable: %s", exc)
-                mouth = None
+                mouth = None  # type: ignore[assignment]
         try:
             from desktop.mate_bridge import MateBridge
         except Exception:  # noqa: BLE001
@@ -127,10 +127,10 @@ class LipSyncSubscriber:
                 here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
                 if here not in sys.path:
                     sys.path.insert(0, here)
-                from desktop.mate_bridge import MateBridge
+                from desktop.mate_bridge import MateBridge  # type: ignore[no-redef]
             except Exception as exc:  # noqa: BLE001
                 log.warning("MateBridge unavailable: %s", exc)
-                MateBridge = None
+                MateBridge = None  # type: ignore[assignment,misc]
 
         # English phoneme worker (persistent, cold ~7 s)
         pw = None
@@ -185,7 +185,7 @@ class LipSyncSubscriber:
             pauses = find_pauses(mono, sr)
         except Exception:  # noqa: BLE001
             try:
-                from mouth import find_pauses
+                from mouth import find_pauses  # type: ignore[import-not-found,no-redef]
                 pauses = find_pauses(mono, sr)
             except Exception:  # noqa: BLE001
                 pauses = []

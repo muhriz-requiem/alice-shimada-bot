@@ -64,7 +64,7 @@ class StreamingAudioSource(discord.AudioSource):
         """We send raw PCM, not Opus (discord.AudioSource API)."""
         return False
 
-    def read(self) -> bytes | None:
+    def read(self) -> bytes:
         """
         Read the next 20ms frame for Discord.
         Called by discord.py's voice client in a loop.

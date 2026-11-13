@@ -144,7 +144,7 @@ class AliceVoiceSink(voice_recv.AudioSink):
             return
 
         user_id = user.id
-        pcm = data.pcm  # bytes or np.ndarray
+        pcm: np.ndarray | bytes | bytearray = data.pcm  # bytes or np.ndarray
 
         if pcm is None or len(pcm) == 0:
             return

@@ -248,9 +248,9 @@ def _write_report(eval_dir: Path, rows: list[dict], refs: dict[str, str]) -> Non
 
     (eval_dir / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     with open(eval_dir / "report.csv", "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=["candidate", "mode", "wer", "p50_ms", "p95_ms", "disagree", "n", "vram_mb"])
-        w.writeheader()
-        w.writerows(csv_rows)
+        writer = csv.DictWriter(f, fieldnames=["candidate", "mode", "wer", "p50_ms", "p95_ms", "disagree", "n", "vram_mb"])
+        writer.writeheader()
+        writer.writerows(csv_rows)
     print(f"\nWrote {eval_dir / 'report.md'} and report.csv")
 
 

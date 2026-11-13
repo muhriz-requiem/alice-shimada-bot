@@ -250,7 +250,7 @@ class LocalVoiceClient:
         self.guild_id = guild_id
         self.channel = channel
         self._factory = output_factory or (lambda: SdOutput(rms_callback=rms_callback))
-        self._out = None
+        self._out: object | None = None
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
 

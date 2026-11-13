@@ -144,10 +144,10 @@ async def teardown(monitor_task, mic, client, sink, guild_id: int) -> None:
             if t is not current and not t.done()
         ]
         if pending:
-            done, pending = await asyncio.wait(
+            _, still_pending = await asyncio.wait(
                 pending, timeout=5.0
             )
-            for t in pending:
+            for t in still_pending:
                 log.warning("Background task did not finish in time: %r", t)
 
 
@@ -369,7 +369,7 @@ async def boot_companion(
         from desktop.look_service import LookService
 
         look_service = LookService(pipeline, mate_bridge=None)
-        look_service.allowed = bool(getattr(config, "SCREEN_LOOK_ENABLED", False))
+        look_service.set_allowed(bool(getattr(config, "SCREEN_LOOK_ENABLED", False)))
         if config.SCREEN_LOOK_AMBIENT:
             look_service.start_ambient()
             log.info("Ambient screen glances enabled")
@@ -448,7 +448,7 @@ class CompanionSession:
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stop_evt: asyncio.Event | None = None
-        self._booted = None
+        self._booted: SimpleNamespace | None = None
         self._glance_allowed = False
 
     # --- public, tray-thread safe ---------------------------------------

@@ -53,6 +53,9 @@ optional-dependencies = { dev = [
     "pytest-cov>=4.1.0",
     "mypy>=1.8.0",
     "ruff>=0.3.0",
+    # Type stubs needed by `mypy .` in CI (see [tool.mypy])
+    "types-pywin32",
+    "scipy-stubs",
 ] }
 
 [tool.ruff]
@@ -106,7 +109,7 @@ indent-style = "space"
 skip-magic-trailing-comma = false
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.11"
 warn_return_any = false
 warn_unused_configs = true
 disallow_untyped_defs = false
@@ -119,19 +122,35 @@ pretty = true
 namespace_packages = true
 explicit_package_bases = true
 mypy_path = "."
-exclude = ["_legacy", "venv", "__pycache__", "tests", "data", "logs"]
+exclude = [
+    "_legacy", "venv", "__pycache__", "tests", "data", "logs",
+    # One-off dataset tooling and retired overlay probes (never published)
+    "AliceVoiceExtraction",
+    "desktop/tools/alpha_test.py",
+    "desktop/tools/composition_bench.py",
+    "desktop/tools/overlay_cycle_test.py",
+    "desktop/tools/probe_live_overlay.py",
+    "desktop/tools/verify_live_overlay.py",
+]
 disable_error_code = [
     "attr-defined",      # Bot attributes not recognized
     "union-attr",        # Channel union types
     "arg-type",          # openai message types
     "method-assign",     # tree.on_error assignment
     "var-annotated",     # discord UI component annotations
+    "annotation-unchecked",  # consistent with check_untyped_defs=false below
 ]
 
 [[tool.mypy.overrides]]
 module = [
     "discord", "openai", "requests", "dotenv", "jinja2",
-    "prometheus_client", "python_json_logger", "redis", "aiohttp",
+    "prometheus_client", "pythonjsonlogger.json", "redis", "aiohttp",
+    # Hardware/ML packages without stubs or py.typed markers
+    "sounddevice", "aec_audio_processing", "silero_vad",
+    "faster_whisper", "torchaudio", "soundfile", "pystray",
+    "noisereduce",
+    # RVC's own repo modules (loaded via sys.path injection into D:\RVC)
+    "configs.config", "infer.*", "text",
 ]
 ignore_missing_imports = true
 
