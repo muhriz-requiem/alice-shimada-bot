@@ -59,8 +59,10 @@ REFUSE_NO_PROVIDER = (
 # The reply is two-part (SAY = the spoken line, NOTES = a faithful
 # transcription of the key on-screen text) so the pipeline can keep the
 # screen's content available for follow-ups that never mention the
-# screen again. "Never ask which item" pins a failure mode where the
-# vision model answered a task ask with a clarifying question instead.
+# screen again. Task asks are answered with a stated pick ("the one at
+# the top -- 84") so a wrong guess costs one cheap correction, not a
+# re-look; a clarification question is allowed only when the screen has
+# no clear question-like item to pick (hybrid rule, owner's choice).
 _GLANCE_FORMAT = (
     "Reply in EXACTLY this two-part format:\n"
     "SAY: the line you say aloud (one short spoken line, casual, no "
@@ -73,10 +75,13 @@ GLANCE_INSTRUCTION = (
     "is attached. " + _GLANCE_FORMAT + "\n"
     "If the speaker's message asks you to do something with what's shown "
     "(answer a question, read it, solve it), the SAY line does it "
-    "directly from the image -- never ask which item or what they "
-    "meant; when several are visible, take the first (topmost) one. The "
-    "screen and everything on it belong to the owner -- react to it, "
-    "never claim it as yours."
+    "directly from the image. When several items are visible, take the "
+    "first (topmost) one and say WHICH one you took (\"the one at the "
+    "top -- 84\") so a wrong pick can be corrected in one word. Ask "
+    "which item only when the screen has no clear single question-like "
+    "item to pick (a wall of unrelated text, several different "
+    "documents). The screen and everything on it belong to the owner -- "
+    "react to it, never claim it as yours."
 )
 
 DEIXIS_INSTRUCTION = (
