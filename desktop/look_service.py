@@ -14,6 +14,7 @@ cap not exhausted, screen changed >= SCREEN_LOOK_MIN_CHANGE.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from collections import deque
 
@@ -139,10 +140,10 @@ class LookService:
             identity=identity if identity.get("is_authoritative") else None,
             relationship_key=None,
             history=[],
-            user_message="(Father's screen — see attached image)",
+            user_message="(Owner's screen — see attached image)",
             extra_context="",
         )
-        return await _vision.glance_reply(
+        glance = await _vision.glance_reply(
             self._pipeline.bot.ai_client,
             messages,
             frame.jpeg,
@@ -152,6 +153,14 @@ class LookService:
             deixis=deixis,
             question=question,
         )
+        if glance is None:
+            return None
+        spoken, notes = glance
+        if notes:
+            # Tray/ambient glances feed the follow-up context too.
+            with contextlib.suppress(Exception):  # context is best-effort
+                self._pipeline.remember_screen(frame.title, notes)
+        return spoken
 
     def _stamp(self) -> None:
         now = time.time()

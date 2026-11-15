@@ -295,6 +295,10 @@ class VoicePipeline:
         # ("what do you think of this?"); voice/ stays headless.
         self.screen_look_provider = None
         self._look_cooldown_until: dict[int, float] = {}
+        # What the last glance saw (RAM only): follow-up questions about
+        # the screen don't need the word "screen" again ("what about
+        # number 3?"). TTL: SCREEN_LOOK_CONTEXT_TTL_S.
+        self.screen_context: dict | None = None
 
         # --- Live mode (VOICE_LIVE_MODE) -----------------------------------
         # Adaptive turn-end, predictive STT, banked address-acks ("Hm?"),
@@ -682,6 +686,30 @@ class VoicePipeline:
         finally:
             self._ack_in_flight.discard(guild_id)
 
+    def remember_screen(self, title: str, notes: str) -> None:
+        """Record what a glance saw (RAM only) for follow-up questions."""
+        notes = (notes or "").strip()
+        if not notes:
+            return
+        self.screen_context = {
+            "title": (title or "")[:120],
+            "notes": notes[:400],
+            "ts": time.monotonic(),
+        }
+
+    def screen_context_note(self) -> str:
+        """Extra-context block with the recent screen content, or ''."""
+        ctx = self.screen_context
+        if not ctx:
+            return ""
+        age = time.monotonic() - ctx["ts"]
+        if age > max(5.0, config.SCREEN_LOOK_CONTEXT_TTL_S):
+            return ""
+        return (
+            f"[Recently on the owner's screen ({ctx['title'] or 'untitled'}, "
+            f"{age:.0f}s ago): {ctx['notes']}]\n"
+        )
+
     async def _screen_look_reply(
         self,
         *,
@@ -731,7 +759,7 @@ class VoicePipeline:
             return None
 
         t_glance0 = time.monotonic()
-        reply = await _vision.glance_reply(
+        glance = await _vision.glance_reply(
             self.bot.ai_client,
             messages,
             frame.jpeg,
@@ -741,18 +769,21 @@ class VoicePipeline:
             deixis=(look_kind == sl.LOOK_INTENT_DEIXIS),
             question=text,
         )
-        if reply is None:
+        if glance is None:
             record_glance("failed")
             if look_kind == sl.LOOK_INTENT_EXPLICIT:
-                return "Hmm... I can't look right now. Sorry, Father."
+                return "Hmm... I can't look right now. Sorry."
             return None
+        spoken, notes = glance
         record_glance("ok", time.monotonic() - t_glance0)
+        self.remember_screen(frame.title, notes)
 
         if config.SCREEN_LOOK_MEMORY:
             try:
+                body = notes or spoken
                 note = (
-                    f"(glance) Father's screen [{(frame.title or 'unknown')[:60]}]: "
-                    f"{reply[:80]}"
+                    f"(glance) owner's screen [{(frame.title or 'unknown')[:60]}]: "
+                    f"{body[:120]}"
                 )
                 self.bot.memory_graph.add(
                     user_id_str, note, self.bot.character.identity_keywords
@@ -763,10 +794,10 @@ class VoicePipeline:
         try:
             cb = getattr(self, "screen_look_on_spoken", None)
             if cb is not None:
-                cb(reply)
+                cb(spoken)
         except Exception:  # noqa: BLE001 - expression touch is cosmetic
             pass
-        return reply
+        return spoken
 
     async def speak_glance(self, guild_id: int, reply_text: str) -> None:
         """Speak an unprompted ambient-glance comment through the normal
@@ -866,6 +897,9 @@ class VoicePipeline:
                 "only spoken words.\n"
                 f"{lang_instruction}"
             )
+            # What a recent glance saw: follow-ups ("what about number
+            # 3?") work without saying "screen" again.
+            voice_extra += self.screen_context_note()
 
             # Conversation history from the voice tracker (exclude the
             # current utterance -- it was already recorded and is passed

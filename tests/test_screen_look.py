@@ -16,6 +16,17 @@ from voice import screen_look as sl
     ("What's on my screen right now?", sl.LOOK_INTENT_EXPLICIT),
     ("Can you see my screen?", sl.LOOK_INTENT_EXPLICIT),
     ("Check my screen", sl.LOOK_INTENT_EXPLICIT),
+    ("Could you look at the screen and answer the question?", sl.LOOK_INTENT_EXPLICIT),
+    ("Answer the question on my screen", sl.LOOK_INTENT_EXPLICIT),
+    ("Solve the problem on the screen", sl.LOOK_INTENT_EXPLICIT),
+    ("Read the question from my screen", sl.LOOK_INTENT_EXPLICIT),
+    ("What's on the screen?", sl.LOOK_INTENT_EXPLICIT),
+    ("Read my screen", sl.LOOK_INTENT_EXPLICIT),
+    ("My screen is frozen again", sl.LOOK_INTENT_EXPLICIT),
+    ("Can you see my second monitor?", sl.LOOK_INTENT_EXPLICIT),
+    ("Take a screenshot", sl.LOOK_INTENT_EXPLICIT),
+    ("Can you answer my question?", sl.LOOK_INTENT_NONE),  # no screen referent
+    ("What about number 3?", sl.LOOK_INTENT_NONE),  # follow-up: context, not trigger
     ("What do you think of this?", sl.LOOK_INTENT_DEIXIS),
     ("What is this?", sl.LOOK_INTENT_DEIXIS),
     ("Can you see this?", sl.LOOK_INTENT_DEIXIS),
@@ -376,3 +387,155 @@ def test_record_glance_metrics():
     record_glance("refused")
     record_glance("failed")
     assert glance_latency is not None
+
+
+# --- glance prompt assembly (ai/vision.glance_reply) ----------------------
+
+class _CaptureVision:
+    def __init__(self):
+        self.messages = None
+
+    async def vision_chat(self, messages, **kw):
+        self.messages = messages
+        return "Ooh, math homework?"
+
+
+_PERSONA = [
+    {"role": "system", "content": "persona"},
+    {"role": "user", "content": "hi"},
+]
+
+
+@pytest.mark.asyncio
+async def test_glance_reply_explicit_carries_the_ask():
+    from ai import vision
+
+    client = _CaptureVision()
+    spoken, notes = await vision.glance_reply(
+        client, _PERSONA, b"jpeg", "Notepad",
+        user_id="1", channel_id="0", deixis=False,
+        question="Could you look at the screen and answer the question?",
+    )
+    assert spoken == "Ooh, math homework?"
+    assert notes == ""
+    text = client.messages[-1]["content"][0]["text"]
+    assert "(The speaker asked:" in text
+    assert "answer the question" in text
+
+
+@pytest.mark.asyncio
+async def test_glance_reply_tray_has_no_ask_line():
+    from ai import vision
+
+    client = _CaptureVision()
+    spoken, notes = await vision.glance_reply(
+        client, _PERSONA, b"jpeg", "Notepad",
+        user_id="1", channel_id="0", deixis=False, question="",
+    )
+    assert spoken == "Ooh, math homework?"
+    assert notes == ""
+    text = client.messages[-1]["content"][0]["text"]
+    assert "(The speaker asked:" not in text
+    assert text.startswith("[Screen glance]")
+
+
+@pytest.mark.asyncio
+async def test_glance_reply_deixis_uses_deixis_instruction():
+    from ai import vision
+
+    client = _CaptureVision()
+    spoken, _notes = await vision.glance_reply(
+        client, _PERSONA, b"jpeg", "Notepad",
+        user_id="1", channel_id="0", deixis=True,
+        question="what do you think of this?",
+    )
+    assert spoken == "Ooh, math homework?"
+    text = client.messages[-1]["content"][0]["text"]
+    assert "(The speaker asked:" in text
+    assert "what do you think of this?" in text
+
+
+def test_glance_strings_are_identity_neutral():
+    # "Father" lives in persona/identity data only -- plumbing never
+    # hardcodes the owner's address term.
+    assert "Father" not in sl.GLANCE_INSTRUCTION
+    assert "Father" not in sl.DEIXIS_INSTRUCTION
+    assert "Father" not in sl.REFUSE_PERMISSION
+    assert "Father" not in sl.REFUSE_DENYLIST
+    assert "Father" not in sl.REFUSE_NO_PROVIDER
+
+
+# --- glance output parsing (SAY / NOTES two-part contract) ----------------
+
+def test_parse_glance_output_full_format():
+    spoken, notes = sl.parse_glance_output(
+        "SAY: Ooh, math homework? I can try the first one.\n"
+        "NOTES: Q1: 12x7=  Q2: 45/9="
+    )
+    assert spoken == "Ooh, math homework? I can try the first one."
+    assert notes == "Q1: 12x7=  Q2: 45/9="
+
+
+def test_parse_glance_output_case_insensitive_and_say_prefix():
+    spoken, notes = sl.parse_glance_output(
+        "say: hi there\nnotes: the screen shows a menu"
+    )
+    assert spoken == "hi there"
+    assert notes == "the screen shows a menu"
+
+
+def test_parse_glance_output_fallback_without_notes():
+    spoken, notes = sl.parse_glance_output("Oh, you're coding!")
+    assert spoken == "Oh, you're coding!"
+    assert notes == ""
+
+
+def test_parse_glance_output_empty():
+    assert sl.parse_glance_output("") == ("", "")
+    assert sl.parse_glance_output("   ") == ("", "")
+
+
+@pytest.mark.asyncio
+async def test_glance_reply_returns_spoken_and_notes():
+    from ai import vision
+
+    class _TwoPart:
+        async def vision_chat(self, messages, **kw):
+            return "SAY: Got it -- the first one is 84.\nNOTES: Q1: 12x7  Q2: 45/9"
+
+    spoken, notes = await vision.glance_reply(
+        _TwoPart(), _PERSONA, b"jpeg", "Notepad",
+        user_id="1", channel_id="0", deixis=False,
+        question="answer the question on my screen",
+    )
+    assert spoken == "Got it -- the first one is 84."
+    assert "45/9" in notes
+
+
+# --- screen context memory (follow-ups without the word "screen") ---------
+
+@pytest.mark.asyncio
+async def test_screen_context_note_roundtrip(monkeypatch):
+    from voice.pipeline import VoicePipeline
+
+    monkeypatch.setattr(config, "SCREEN_LOOK_CONTEXT_TTL_S", 300.0)
+    pipeline = VoicePipeline(_StubBot())
+    assert pipeline.screen_context_note() == ""
+
+    pipeline.remember_screen("Notepad", "Q1: 12x7=  Q2: 45/9=")
+    note = pipeline.screen_context_note()
+    assert "Recently on the owner's screen" in note
+    assert "Notepad" in note
+    assert "45/9" in note
+
+    pipeline.screen_context["ts"] -= 400.0  # older than the TTL
+    assert pipeline.screen_context_note() == ""
+
+
+@pytest.mark.asyncio
+async def test_remember_screen_ignores_empty_notes():
+    from voice.pipeline import VoicePipeline
+
+    pipeline = VoicePipeline(_StubBot())
+    pipeline.remember_screen("Notepad", "   ")
+    assert pipeline.screen_context is None

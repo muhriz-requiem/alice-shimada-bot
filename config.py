@@ -627,6 +627,10 @@ SCREEN_LOOK_DENYLIST = _get_prefixed(
 ).split(",")
 # On-demand cooldown (s) and deixis cooldown (s).
 SCREEN_LOOK_COOLDOWN_S = _get_prefixed_float("SCREEN_LOOK_COOLDOWN_S", 8.0)
+# How long a glance's screen notes stay available to follow-up questions
+# that don't mention the screen again ("what about number 3?"). Values
+# below 5s are clamped up in code; the context is RAM-only.
+SCREEN_LOOK_CONTEXT_TTL_S = _get_prefixed_float("SCREEN_LOOK_CONTEXT_TTL_S", 300.0)
 # Ambient glances (idle-time remarks about a CHANGED screen): master
 # switch, min seconds between glances, hourly cap, and the minimum
 # fraction of pixels that must change for the screen to count as new.
