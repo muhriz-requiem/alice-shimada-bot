@@ -272,19 +272,27 @@ governor, boot watchdogs, desktop app logic).
   next message (`auto_relationship` — auto-assigns whenever the tier is
   "stranger").
 - **2026-11-11 SCREEN GLANCE — Alice can see your screen** (tray-permission
-  mode): ask "Alice, look at my screen" / "What's on my screen?" and she
-  captures (RAM-only), checks the window-title denylist, and reacts in one
-  in-character line via Groq's vision model (`qwen/qwen3.8-27b`, ~850
-  tokens per glance — free-tier friendly). Deixis works too: "What do you
-  think of THIS?" captures first, then answers; multi-monitor asks
-  ("look at my second screen") capture the other monitor. Tray items:
-  **Look at my screen now** and **Screen glances allowed** — the checkbox
-  is THE privacy gate (resets each boot; no capture while it's off;
-  granting it runtime-enables the feature). Ambient mode
-  (`SCREEN_LOOK_AMBIENT`) lets her comment on her own when the screen
-  changed and the conversation is idle (cooldown + hourly cap +
-  pixel-change gate). Glances can be remembered in the memory graph
-  (`SCREEN_LOOK_MEMORY`) and carry a mild expression preset over MtBridge.
+  mode): ANY mention of screen/monitor/screenshot triggers a capture
+  ("Alice, look at the screen and answer the question", "what's on
+  screen?", "my screen is frozen" — no fixed phrasings needed). Each
+  glance produces a spoken line AND a `NOTES` transcription of the key
+  on-screen text, kept in RAM for `SCREEN_LOOK_CONTEXT_TTL_S` (300s) so
+  follow-ups that never mention the screen ("what about number 3?")
+  still work. She answers task asks directly, says which item she took
+  ("the one at the top — 84"), and only asks for clarification when
+  nothing on screen is pickable. Captures are RAM-only and pass the
+  window-title denylist; the vision model (`qwen/qwen3.8-27b`, ~850
+  tokens per glance — free-tier friendly) returns the two-part reply.
+  Deixis works too: "What do you think of THIS?" captures first, then
+  answers; multi-monitor asks ("look at my second screen") capture the
+  other monitor. Tray items: **Look at my screen now** and **Screen
+  glances allowed** — the checkbox is THE privacy gate (resets each
+  boot; no capture while it's off; granting it runtime-enables the
+  feature). Ambient mode (`SCREEN_LOOK_AMBIENT`) lets her comment on
+  her own when the screen changed and the conversation is idle
+  (cooldown + hourly cap + pixel-change gate). Glances can be
+  remembered in the memory graph (`SCREEN_LOOK_MEMORY`) and carry a
+  mild expression preset over MtBridge.
   Metrics: `alicebot_glance_total{outcome}` + `alicebot_glance_latency_seconds`
   on `/metrics`. New modules: `voice/screen_look.py` (intents, headless),
   `ai/vision.py`, `desktop/screen_watch.py` (capture/privacy),

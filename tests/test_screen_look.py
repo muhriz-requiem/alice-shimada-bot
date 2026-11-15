@@ -347,6 +347,29 @@ async def test_look_cooldown_suppresses_repeat(monkeypatch):
     assert second is None  # cooldown gates the repeat
 
 
+@pytest.mark.asyncio
+async def test_look_cooldown_not_burned_by_refusal(monkeypatch):
+    from voice.pipeline import VoicePipeline
+
+    monkeypatch.setattr(config, "SCREEN_LOOK_ENABLED", False)
+    monkeypatch.setattr(config, "SCREEN_LOOK_COOLDOWN_S", 60.0)
+    bot = _StubBot()
+    pipeline = VoicePipeline(bot)
+    pipeline.screen_look_provider = _FakeProvider(_Frame())
+
+    # A refusal (feature off) must not consume the cooldown: the loose
+    # keyword trigger makes false-positive asks routine, and they must
+    # not starve a real ask that follows seconds later.
+    reply = await pipeline._screen_look_reply(
+        guild_id=0, user_id_str="1", channel_id="0",
+        text="look at my screen", look_kind=sl.LOOK_INTENT_EXPLICIT,
+        messages=[], identity={}, relationship=None, history=[],
+        voice_extra="",
+    )
+    assert reply == sl.REFUSE_PERMISSION
+    assert pipeline._look_cooldown_until.get(0, 0.0) == 0.0
+
+
 def test_match_monitor_hint():
     assert sl.match_monitor_hint("Alice, look at my second screen") == "1"
     assert sl.match_monitor_hint("what's on the other monitor?") == "1"

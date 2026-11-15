@@ -735,15 +735,20 @@ class VoicePipeline:
         now = time.monotonic()
         if now < self._look_cooldown_until.get(guild_id, 0.0):
             return None
-        self._look_cooldown_until[guild_id] = now + max(1.0, config.SCREEN_LOOK_COOLDOWN_S)
 
         if not config.SCREEN_LOOK_ENABLED:
             # Feature off: explicit asks get the honest in-character
-            # refusal; deixis falls through to the normal reply.
+            # refusal; deixis falls through to the normal reply. No
+            # cooldown is burned: refusals attempt no capture (the loose
+            # keyword trigger makes false positives routine; they must
+            # not starve a real ask that follows seconds later).
             if look_kind == sl.LOOK_INTENT_EXPLICIT:
                 record_glance("refused")
                 return sl.REFUSE_PERMISSION
             return None
+
+        # Cooldown covers capture attempts only (see above).
+        self._look_cooldown_until[guild_id] = now + max(1.0, config.SCREEN_LOOK_COOLDOWN_S)
 
         frame = None
         try:

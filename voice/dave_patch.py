@@ -99,9 +99,21 @@ def _patch_dave_decrypt() -> None:
     log.info("PacketDecoder._decode_packet patched (DAVE decrypt)")
 
 
+_davey_missing_logged = False
+
+
 def _try_dave_decrypt(decoder, packet, stats: dict) -> None:
     """Best-effort DAVE decryption of packet.decrypted_data in place."""
-    import davey
+    global _davey_missing_logged
+    try:
+        import davey  # optional: DAVE (E2EE) voice decryption
+    except ImportError:
+        if not _davey_missing_logged:
+            _davey_missing_logged = True
+            log.info(
+                "davey not installed; DAVE decryption disabled (plain audio only)"
+            )
+        return
 
     stats["attempted"] += 1
     n = stats["attempted"]
