@@ -15,6 +15,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.wintypes
 import io
+import sys
 import time
 from dataclasses import dataclass
 
@@ -25,7 +26,9 @@ from bot.logging_setup import get_logger
 
 log = get_logger("desktop.screen_watch")
 
-_user32 = ctypes.windll.user32  # None on non-Windows (feature off)
+_user32: ctypes.CDLL | None = None
+if sys.platform == "win32":  # None on non-Windows (feature off)
+    _user32 = ctypes.windll.user32
 
 
 @dataclass
@@ -41,6 +44,8 @@ class GlanceFrame:
 
 def foreground_title() -> str:
     """Title of the foreground window ("" when unavailable)."""
+    if _user32 is None:
+        return ""
     try:
         hwnd = _user32.GetForegroundWindow()
         if not hwnd:

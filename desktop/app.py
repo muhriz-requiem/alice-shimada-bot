@@ -58,7 +58,9 @@ _ERROR_ALREADY_EXISTS = 183  # winerror.ERROR_ALREADY_EXISTS
 # use_last_error: CPython's documented pattern -- a *second* ctypes
 # call ("kernel32.GetLastError()") may observe a reset error state,
 # while get_last_error() reads the captured error of OUR call.
-_kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_kernel32: ctypes.CDLL | None = None
+if sys.platform == "win32":
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
 
 def acquire_single_instance() -> int | None:
@@ -71,6 +73,9 @@ def acquire_single_instance() -> int | None:
     in release_single_instance is meaningful). If the object already
     exists, Windows ignores bInitialOwner and we exit immediately.
     """
+    if _kernel32 is None:
+        return None  # non-Windows: no mutex mechanism (tests/CI)
+
     handle = _kernel32.CreateMutexW(None, True, _MUTEX_NAME)
     err = ctypes.get_last_error()
     if handle == 0 or err == _ERROR_ALREADY_EXISTS:
@@ -87,6 +92,9 @@ def release_single_instance(handle: int) -> None:
     last handle is closed, so a skipped CloseHandle would make the next
     launch hit ERROR_ALREADY_EXISTS for the stale object.
     """
+    if _kernel32 is None:
+        return  # non-Windows: nothing was ever acquired
+
     _kernel32.ReleaseMutex(handle)
     _kernel32.CloseHandle(handle)
 

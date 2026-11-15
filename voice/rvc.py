@@ -234,6 +234,10 @@ def convert(
         audio = audio / peak * 0.95
 
     # RVC offline path expects a 16 kHz mono WAV on disk
+    # (bare ndarray: the two numpy stub generations resolved for py3.11
+    # vs py3.12 type the resample/astype and passthrough branches
+    # differently)
+    audio_16k: np.ndarray
     if sample_rate != 16000:
         import scipy.signal
         audio_16k = scipy.signal.resample(
